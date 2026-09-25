@@ -1,8 +1,8 @@
 import logging
 import re
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from bs4 import BeautifulSoup
 
@@ -30,6 +30,10 @@ KEYWORDS_RELEVANTES = [
     "promoci",
     "fondo",
     "reindustrializa",
+    "convocatoria",
+    "crédito",
+    "credito",
+    "programa",
 ]
 
 # Patrones típicos de anuncios que NO son subvenciones empresariales (empleo público, sanciones, etc.)
@@ -46,32 +50,21 @@ PATRONES_EXCLUSION = [
     r"aprovechamiento de aguas",
 ]
 
-
-def get_last_n_working_days(n: int, reference_date: Optional[date] = None) -> List[date]:
-    """
-    Calcula la lista de los últimos N días laborables (lunes a viernes)
-    comenzando desde reference_date (por defecto date.today()) hacia atrás.
-    """
-    if reference_date is None:
-        reference_date = date.today()
-    working_days: List[date] = []
-    current = reference_date
-    while len(working_days) < n:
-        if current.weekday() < 5:  # 0: Lunes, 4: Viernes
-            working_days.append(current)
-        current -= timedelta(days=1)
-    return working_days
+MESES_ES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
+}
 
 
 class BOPVScraper(BaseScraper):
     """
     Scraper oficial para el Boletín Oficial del País Vasco (BOPV).
-    Descarga el sumario diario estructurado en XML/RSS y extrae los anuncios
-    relevantes para pymes, talleres y entidades culturales.
-    Soporta descarga histórica por rango de días laborables.
+    Detecta el boletín actual desde Ultimo.xml e itera hacia atrás por número correlativo
+    descargando los sumarios HTML históricos (sYY_NNNN.shtml).
     """
 
     DEFAULT_SUMARIO_URL = "https://www.euskadi.eus/bopv2/datos/Ultimo.xml"
+    BASE_DATOS_URL = "https://www.euskadi.eus/web01-bopv/es/bopv2/datos"
 
     def __init__(
         self,
@@ -88,106 +81,265 @@ class BOPVScraper(BaseScraper):
                 "Mozilla/5.0 (compatible; SubvencionesEuskadiBot/1.0; "
                 "+https://github.com/subvenciones-core)"
             ),
-            "Accept": "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,*/*;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
 
     def fetch_items(self) -> List[Dict[str, Any]]:
         """
-        Descarga el/los sumario(s) XML oficial(es) del BOPV y parsea sus elementos <item>.
-        Si self.days > 1 y no se especificó sumario_url, descarga los últimos N días laborables.
+        Descarga el/los sumario(s) del BOPV.
+        Si self.sumario_url está definido, descarga esa URL directamente.
+        En caso contrario, detecta el boletín actual desde Ultimo.xml e itera
+        hacia atrás los últimos N boletines.
         """
         items: List[Dict[str, Any]] = []
         seen_ids = set()
 
-        try:
-            with httpx.Client(
-                timeout=self.timeout_seconds,
-                headers=self.client_headers,
-                follow_redirects=True,
-            ) as client:
-                if self.sumario_url:
-                    logger.info(f"[{self.name}] Descargando sumario específico desde {self.sumario_url}")
-                    items = self._fetch_url_items(client, self.sumario_url)
-                elif self.days <= 1:
-                    logger.info(f"[{self.name}] Descargando sumario del día desde {self.DEFAULT_SUMARIO_URL}")
-                    items = self._fetch_url_items(client, self.DEFAULT_SUMARIO_URL)
-                else:
-                    working_days = get_last_n_working_days(self.days)
-                    logger.info(
-                        f"[{self.name}] Descargando sumarios de los últimos {self.days} días laborables "
-                        f"({working_days[-1]} al {working_days[0]})..."
-                    )
-                    for target_day in working_days:
-                        day_items = self._fetch_items_for_date(client, target_day)
-                        for item in day_items:
-                            if item["id_origen"] not in seen_ids:
-                                seen_ids.add(item["id_origen"])
-                                items.append(item)
+        with httpx.Client(
+            timeout=self.timeout_seconds,
+            headers=self.client_headers,
+            follow_redirects=True,
+        ) as client:
+            if self.sumario_url:
+                logger.info(f"[{self.name}] Descargando sumario específico desde {self.sumario_url}")
+                return self._fetch_url_xml_items(client, self.sumario_url)
 
-        except httpx.HTTPStatusError as http_err:
-            if http_err.response.status_code == 404:
-                logger.info(f"[{self.name}] El sumario no fue encontrado (HTTP 404).")
+            # 1. Detección del boletín inicial desde Ultimo.xml
+            latest_info = self._get_latest_bulletin_info(client)
+            if not latest_info:
+                logger.error(f"[{self.name}] No se pudo detectar la información del boletín inicial desde Ultimo.xml")
                 return []
-            logger.error(f"[{self.name}] Error HTTP al consultar el sumario: {http_err}")
-            raise
-        except httpx.HTTPError as http_err:
-            logger.error(f"[{self.name}] Error HTTP al consultar el sumario: {http_err}")
-            raise
-        except ET.ParseError as parse_err:
-            logger.error(f"[{self.name}] Error parseando XML del sumario: {parse_err}")
-            raise
-        except Exception as ex:
-            logger.error(f"[{self.name}] Error inesperado en fetch_items: {ex}", exc_info=True)
-            raise
+
+            latest_num, latest_date_str, latest_year, latest_month = latest_info
+            logger.info(
+                f"[{self.name}] Boletín inicial detectado: Nº {latest_num} "
+                f"({latest_date_str}, año={latest_year}, mes={latest_month:02d})"
+            )
+
+            # 2. Iteración hacia atrás para N boletines
+            current_year = latest_year
+            current_month = latest_month
+
+            for i in range(self.days):
+                bulletin_num = latest_num - i
+                if bulletin_num <= 0:
+                    break
+
+                bulletin_items, current_year, current_month = self._fetch_bulletin_by_number(
+                    client, bulletin_num, current_year, current_month
+                )
+
+                # Aplicar filtrado de relevancia para logging informativo
+                relevant_in_bulletin = self.filter_relevant(bulletin_items)
+                logger.info(
+                    f"[{self.name}] Boletín Nº {bulletin_num} ({current_year}/{current_month:02d}): "
+                    f"{len(bulletin_items)} anuncios encontrados, {len(relevant_in_bulletin)} pasaron el filtro de subvenciones."
+                )
+
+                for item in bulletin_items:
+                    if item["id_origen"] not in seen_ids:
+                        seen_ids.add(item["id_origen"])
+                        items.append(item)
 
         return items
 
-    def _fetch_url_items(
+    def _get_latest_bulletin_info(self, client: httpx.Client) -> Optional[Tuple[int, str, int, int]]:
+        """
+        Descarga Ultimo.xml y extrae (bulletin_number, date_str, year, month).
+        """
+        try:
+            r = client.get(self.DEFAULT_SUMARIO_URL)
+            r.raise_for_status()
+            content = r.content
+            try:
+                xml_text = content.decode("utf-8")
+            except UnicodeDecodeError:
+                xml_text = content.decode("iso-8859-1", errors="replace")
+
+            root = ET.fromstring(xml_text)
+            channel_title = root.findtext(".//channel/title") or ""
+            channel_pubdate = root.findtext(".//channel/pubDate") or ""
+
+            match_num = re.search(r"N[ºo\.\s]*(\d+)", channel_title, re.IGNORECASE)
+            match_date = re.search(r"fecha\s*(\d{2}/\d{2}/\d{4})", channel_title, re.IGNORECASE)
+
+            if not match_num:
+                return None
+
+            bulletin_num = int(match_num.group(1))
+            date_str = match_date.group(1) if match_date else None
+
+            if date_str:
+                dt = datetime.strptime(date_str, "%d/%m/%Y").date()
+                pub_date_formatted = dt.strftime("%Y-%m-%d")
+                year, month = dt.year, dt.month
+            elif channel_pubdate and len(channel_pubdate) >= 10:
+                dt = datetime.strptime(channel_pubdate[:10], "%Y-%m-%d").date()
+                pub_date_formatted = dt.strftime("%Y-%m-%d")
+                year, month = dt.year, dt.month
+            else:
+                dt = date.today()
+                pub_date_formatted = dt.strftime("%Y-%m-%d")
+                year, month = dt.year, dt.month
+
+            return bulletin_num, pub_date_formatted, year, month
+        except Exception as ex:
+            logger.error(f"[{self.name}] Error descargando Ultimo.xml: {ex}")
+            return None
+
+    def _fetch_bulletin_by_number(
+        self,
+        client: httpx.Client,
+        bulletin_num: int,
+        year: int,
+        month: int,
+    ) -> Tuple[List[Dict[str, Any]], int, int]:
+        """
+        Descarga el sumario HTML para un número correlativo de boletín.
+        Maneja retroceso de mes (MM - 1) si devuelve 404.
+        Retorna (items, updated_year, updated_month).
+        """
+        yy = str(year)[2:]
+        filename = f"s{yy}_{bulletin_num:04d}.shtml"
+
+        # Candidatos de (año, mes) a probar en caso de cambio de mes o año
+        candidate_dates = [(year, month)]
+
+        # Agregar mes anterior
+        prev_m = month - 1
+        prev_y = year
+        if prev_m < 1:
+            prev_m = 12
+            prev_y = year - 1
+        candidate_dates.append((prev_y, prev_m))
+
+        # Agregar dos meses atrás por si acaso
+        prev_m2 = prev_m - 1
+        prev_y2 = prev_y
+        if prev_m2 < 1:
+            prev_m2 = 12
+            prev_y2 = prev_y - 1
+        candidate_dates.append((prev_y2, prev_m2))
+
+        for y, m in candidate_dates:
+            url = f"{self.BASE_DATOS_URL}/{y}/{m:02d}/{filename}"
+            try:
+                r = client.get(url)
+                if r.status_code == 200:
+                    items = self._parse_html_sumario(r.text, url, y, m, bulletin_num)
+                    return items, y, m
+                elif r.status_code == 404:
+                    continue
+                else:
+                    logger.warning(f"[{self.name}] Código HTTP {r.status_code} al consultar {url}")
+            except Exception as ex:
+                logger.warning(f"[{self.name}] Error al consultar {url}: {ex}")
+
+        logger.info(f"[{self.name}] Boletín Nº {bulletin_num} ({filename}) no encontrado (HTTP 404).")
+        return [], year, month
+
+    def _parse_html_sumario(
+        self,
+        html_text: str,
+        sumario_url: str,
+        year: int,
+        month: int,
+        bulletin_num: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        Parsea el sumario HTML del boletín sYY_NNNN.shtml y extrae los elementos.
+        """
+        soup = BeautifulSoup(html_text, "html.parser")
+        items: List[Dict[str, Any]] = []
+
+        # Intentar extraer fecha exacta del encabezado del sumario HTML
+        pub_date_str = f"{year:04d}-{month:02d}-01"
+        header_text = soup.get_text()
+        date_match = re.search(
+            r"Sumario\s+n\.[ºo]?\s*\d+.*?,.*?\b(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(\d{4})",
+            header_text,
+            re.IGNORECASE,
+        )
+        if date_match:
+            d_day = int(date_match.group(1))
+            m_str = date_match.group(2).lower()
+            d_year = int(date_match.group(3))
+            d_month = MESES_ES.get(m_str, month)
+            pub_date_str = f"{d_year:04d}-{d_month:02d}-{d_day:02d}"
+
+        # Extraer enlaces a las disposiciones
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            match = re.search(r"(\d{6,8}[a-z]?)\.shtml", href, re.IGNORECASE)
+            if not match:
+                continue
+
+            title = a.get_text(strip=True)
+            if not title or len(title) < 5:
+                continue
+
+            code = match.group(1).lower()
+            id_origen = f"BOPV-{code}"
+
+            if href.startswith("http"):
+                full_url = href
+            elif href.startswith("/"):
+                full_url = f"https://www.euskadi.eus{href}"
+            else:
+                full_url = f"{self.BASE_DATOS_URL}/{year}/{month:02d}/{href}"
+
+            # Extraer organismo emisor / departamento
+            organismo = None
+            curr = a.parent
+            while curr and not organismo:
+                prev = curr.find_previous_sibling()
+                while prev and not organismo:
+                    txt = prev.get_text(strip=True)
+                    if txt and any(k in txt.upper() for k in ["DEPARTAMENTO", "OSAKIDETZA", "AGENCIA", "AUTORIDAD", "CONSEJERIA", "DIPUTACIÓN"]):
+                        organismo = txt
+                        break
+                    prev = prev.previous_sibling
+                curr = curr.parent
+
+            items.append({
+                "id_origen": id_origen,
+                "title": title,
+                "link": full_url,
+                "guid": full_url,
+                "organismo": organismo,
+                "pub_date_str": pub_date_str,
+            })
+
+        return items
+
+    def _fetch_url_xml_items(
         self,
         client: httpx.Client,
         url: str,
-        default_date_str: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Descarga una URL XML y parsea sus elementos."""
-        response = client.get(url)
-        response.raise_for_status()
-
-        content = response.content
+        """Fallback para URLs XML directas especificadas manualmente."""
+        r = client.get(url)
+        r.raise_for_status()
+        content = r.content
         try:
             xml_text = content.decode("iso-8859-1")
         except UnicodeDecodeError:
             xml_text = content.decode("utf-8", errors="replace")
 
-        return self._parse_xml_items(xml_text, default_date_str=default_date_str)
-
-    def _parse_xml_items(
-        self,
-        xml_text: str,
-        default_date_str: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Parsea la cadena XML y extrae los <item>."""
-        items: List[Dict[str, Any]] = []
         root = ET.fromstring(xml_text)
-
         channel_pub_date = (root.findtext(".//channel/pubDate") or "").strip()
         xml_items = root.findall(".//item")
+        items: List[Dict[str, Any]] = []
 
         for item in xml_items:
             title = (item.findtext("title") or "").strip()
             link = (item.findtext("link") or "").strip()
             guid = (item.findtext("guid") or link).strip()
-            pub_date_str = (
-                item.findtext("pubDate")
-                or channel_pub_date
-                or default_date_str
-                or ""
-            ).strip()
+            pub_date_str = (item.findtext("pubDate") or channel_pub_date or "").strip()
 
             if not link and not title:
                 continue
 
             id_origen = self._extract_id_origen(guid or link)
-
             items.append({
                 "id_origen": id_origen,
                 "title": title,
@@ -197,69 +349,6 @@ class BOPVScraper(BaseScraper):
             })
 
         return items
-
-    def _fetch_items_for_date(
-        self,
-        client: httpx.Client,
-        target_date: date,
-    ) -> List[Dict[str, Any]]:
-        """
-        Descarga el sumario XML para una fecha específica.
-        Si la fecha no tuvo publicación (404), captura la excepción limpiamente y retorna lista vacía.
-        """
-        date_str = target_date.strftime("%Y-%m-%d")
-
-        if target_date == date.today():
-            try:
-                return self._fetch_url_items(
-                    client, self.DEFAULT_SUMARIO_URL, default_date_str=date_str
-                )
-            except httpx.HTTPStatusError as http_err:
-                if http_err.response.status_code == 404:
-                    logger.info(f"[{self.name}] No hay sumario publicado hoy {date_str} (HTTP 404).")
-                    return []
-                raise
-
-        yyyy = target_date.strftime("%Y")
-        mm = target_date.strftime("%m")
-        yyyymmdd = target_date.strftime("%Y%m%d")
-
-        candidate_urls = [
-            f"https://www.euskadi.eus/bopv2/datos/{yyyy}/{mm}/{yyyymmdd}.xml",
-            f"https://www.euskadi.eus/bopv2/datos/{yyyy}/{yyyymmdd}.xml",
-            f"https://www.euskadi.eus/bopv2/datos/{yyyy}/{mm}/s{yyyymmdd}.xml",
-        ]
-
-        last_error: Optional[Exception] = None
-        for url in candidate_urls:
-            try:
-                logger.info(f"[{self.name}] Descargando sumario de fecha {date_str} desde {url}")
-                day_items = self._fetch_url_items(client, url, default_date_str=date_str)
-                logger.info(f"[{self.name}] {len(day_items)} elementos descargados para {date_str}")
-                return day_items
-            except httpx.HTTPStatusError as http_err:
-                if http_err.response.status_code == 404:
-                    last_error = http_err
-                    continue
-                else:
-                    logger.error(
-                        f"[{self.name}] Error HTTP {http_err.response.status_code} al consultar {url}"
-                    )
-                    raise
-            except Exception as ex:
-                logger.warning(f"[{self.name}] Error al intentar descargar {url}: {ex}")
-                last_error = ex
-
-        if isinstance(last_error, httpx.HTTPStatusError) and last_error.response.status_code == 404:
-            logger.info(
-                f"[{self.name}] El día {date_str} no tuvo publicación en BOPV (HTTP 404), continuando..."
-            )
-            return []
-
-        logger.info(
-            f"[{self.name}] No se pudo obtener el sumario de {date_str} (HTTP 404 o no disponible)."
-        )
-        return []
 
     def _extract_id_origen(self, identifier: str) -> str:
         """
@@ -291,8 +380,8 @@ class BOPVScraper(BaseScraper):
             # Si contiene palabra clave y no cae en exclusión evidente
             if has_relevant_kw and not has_exclusion:
                 relevant.append(item)
-            elif "subvenci" in title_lower or "ayuda" in title_lower:
-                # Si menciona explícitamente subvención o ayuda, siempre se conserva
+            elif "subvenci" in title_lower or "ayuda" in title_lower or "beca" in title_lower:
+                # Si menciona explícitamente subvención, ayuda o beca, siempre se conserva
                 relevant.append(item)
 
         return relevant
@@ -304,13 +393,12 @@ class BOPVScraper(BaseScraper):
         """
         url = item["link"]
         texto_crudo: Optional[str] = None
-        organismo: Optional[str] = None
+        organismo: Optional[str] = item.get("organismo")
         fecha_publicacion: Optional[date] = None
 
-        # Parsear fecha de publicación del sumario si está disponible
+        # Parsear fecha de publicación si está disponible
         if item.get("pub_date_str"):
             try:
-                # Formato típico YYYY-MM-DD
                 fecha_publicacion = datetime.strptime(
                     item["pub_date_str"][:10], "%Y-%m-%d"
                 ).date()
@@ -335,20 +423,19 @@ class BOPVScraper(BaseScraper):
 
                         soup = BeautifulSoup(html_text, "html.parser")
 
-                        # Intentar extraer organismo de metadatos o cabecera
-                        meta_creator = soup.find("meta", attrs={"name": re.compile(r"dc\.creator", re.I)})
-                        if meta_creator and meta_creator.get("content"):
-                            organismo = str(meta_creator["content"])[:255]
+                        # Intentar extraer organismo de metadatos si no se obtuvo en el sumario
+                        if not organismo:
+                            meta_creator = soup.find("meta", attrs={"name": re.compile(r"dc\.creator", re.I)})
+                            if meta_creator and meta_creator.get("content"):
+                                organismo = str(meta_creator["content"])[:255]
 
                         # Extraer contenido principal (<main> o contenedor de texto)
                         main_tag = soup.find("main") or soup.find("div", class_=re.compile(r"cuerpo|content|edukiontzia", re.I))
                         if main_tag:
-                            # Eliminar scripts y estilos
                             for s in main_tag(["script", "style", "nav", "header", "footer"]):
                                 s.decompose()
                             texto_crudo = main_tag.get_text(separator="\n", strip=True)
                         else:
-                            # Fallback: texto del body completo
                             body = soup.find("body")
                             if body:
                                 for s in body(["script", "style", "nav", "header", "footer"]):
@@ -376,4 +463,5 @@ class BOPVScraper(BaseScraper):
             "fecha_publicacion": fecha_publicacion,
             "estado": EstadoConvocatoria.INGESTADA,
         }
+
 
