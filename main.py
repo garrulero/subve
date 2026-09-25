@@ -172,11 +172,14 @@ def cmd_init_db():
 def cmd_scrape_bopv(
     url: Optional[str] = typer.Option(
         None, "--url", "-u", help="URL opcional del sumario XML a procesar"
-    )
+    ),
+    days: int = typer.Option(
+        1, "--days", "-d", help="Número de días laborables a procesar (por defecto 1, configurable hasta 30)"
+    ),
 ):
     """Ejecuta el scraper del Boletín Oficial del País Vasco (BOPV)."""
-    typer.echo("-> Iniciando ingesta del Boletín Oficial del País Vasco...")
-    scraper = BOPVScraper(sumario_url=url)
+    typer.echo(f"-> Iniciando ingesta del Boletín Oficial del País Vasco ({days} día(s) laborable(s))...")
+    scraper = BOPVScraper(sumario_url=url, days=days)
     db = SessionLocal()
     try:
         stats = scraper.run(db)

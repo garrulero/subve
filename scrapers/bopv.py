@@ -1,7 +1,7 @@
 import logging
 import re
 import xml.etree.ElementTree as ET
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 import httpx
 from bs4 import BeautifulSoup
@@ -47,11 +47,28 @@ PATRONES_EXCLUSION = [
 ]
 
 
+def get_last_n_working_days(n: int, reference_date: Optional[date] = None) -> List[date]:
+    """
+    Calcula la lista de los últimos N días laborables (lunes a viernes)
+    comenzando desde reference_date (por defecto date.today()) hacia atrás.
+    """
+    if reference_date is None:
+        reference_date = date.today()
+    working_days: List[date] = []
+    current = reference_date
+    while len(working_days) < n:
+        if current.weekday() < 5:  # 0: Lunes, 4: Viernes
+            working_days.append(current)
+        current -= timedelta(days=1)
+    return working_days
+
+
 class BOPVScraper(BaseScraper):
     """
     Scraper oficial para el Boletín Oficial del País Vasco (BOPV).
     Descarga el sumario diario estructurado en XML/RSS y extrae los anuncios
     relevantes para pymes, talleres y entidades culturales.
+    Soporta descarga histórica por rango de días laborables.
     """
 
     DEFAULT_SUMARIO_URL = "https://www.euskadi.eus/bopv2/datos/Ultimo.xml"
@@ -60,10 +77,12 @@ class BOPVScraper(BaseScraper):
         self,
         sumario_url: Optional[str] = None,
         timeout_seconds: float = 30.0,
+        days: int = 1,
     ) -> None:
         super().__init__(name="BOPVScraper", source_id="BOPV")
-        self.sumario_url = sumario_url or self.DEFAULT_SUMARIO_URL
+        self.sumario_url = sumario_url
         self.timeout_seconds = timeout_seconds
+        self.days = max(1, days)
         self.client_headers = {
             "User-Agent": (
                 "Mozilla/5.0 (compatible; SubvencionesEuskadiBot/1.0; "
@@ -74,10 +93,11 @@ class BOPVScraper(BaseScraper):
 
     def fetch_items(self) -> List[Dict[str, Any]]:
         """
-        Descarga el sumario XML oficial del BOPV y parsea sus elementos <item>.
+        Descarga el/los sumario(s) XML oficial(es) del BOPV y parsea sus elementos <item>.
+        Si self.days > 1 y no se especificó sumario_url, descarga los últimos N días laborables.
         """
-        logger.info(f"[{self.name}] Descargando sumario desde {self.sumario_url}")
         items: List[Dict[str, Any]] = []
+        seen_ids = set()
 
         try:
             with httpx.Client(
@@ -85,39 +105,31 @@ class BOPVScraper(BaseScraper):
                 headers=self.client_headers,
                 follow_redirects=True,
             ) as client:
-                response = client.get(self.sumario_url)
-                response.raise_for_status()
+                if self.sumario_url:
+                    logger.info(f"[{self.name}] Descargando sumario específico desde {self.sumario_url}")
+                    items = self._fetch_url_items(client, self.sumario_url)
+                elif self.days <= 1:
+                    logger.info(f"[{self.name}] Descargando sumario del día desde {self.DEFAULT_SUMARIO_URL}")
+                    items = self._fetch_url_items(client, self.DEFAULT_SUMARIO_URL)
+                else:
+                    working_days = get_last_n_working_days(self.days)
+                    logger.info(
+                        f"[{self.name}] Descargando sumarios de los últimos {self.days} días laborables "
+                        f"({working_days[-1]} al {working_days[0]})..."
+                    )
+                    for target_day in working_days:
+                        day_items = self._fetch_items_for_date(client, target_day)
+                        for item in day_items:
+                            if item["id_origen"] not in seen_ids:
+                                seen_ids.add(item["id_origen"])
+                                items.append(item)
 
-                # El BOPV suele codificar en ISO-8859-1 o UTF-8
-                content = response.content
-                try:
-                    xml_text = content.decode("iso-8859-1")
-                except UnicodeDecodeError:
-                    xml_text = content.decode("utf-8", errors="replace")
-
-                root = ET.fromstring(xml_text)
-                xml_items = root.findall(".//item")
-
-                for item in xml_items:
-                    title = (item.findtext("title") or "").strip()
-                    link = (item.findtext("link") or "").strip()
-                    guid = (item.findtext("guid") or link).strip()
-                    pub_date_str = (item.findtext("pubDate") or "").strip()
-
-                    if not link and not title:
-                        continue
-
-                    # Extraer identificador único de la disposición a partir de la URL o GUID
-                    id_origen = self._extract_id_origen(guid or link)
-
-                    items.append({
-                        "id_origen": id_origen,
-                        "title": title,
-                        "link": link,
-                        "guid": guid,
-                        "pub_date_str": pub_date_str,
-                    })
-
+        except httpx.HTTPStatusError as http_err:
+            if http_err.response.status_code == 404:
+                logger.info(f"[{self.name}] El sumario no fue encontrado (HTTP 404).")
+                return []
+            logger.error(f"[{self.name}] Error HTTP al consultar el sumario: {http_err}")
+            raise
         except httpx.HTTPError as http_err:
             logger.error(f"[{self.name}] Error HTTP al consultar el sumario: {http_err}")
             raise
@@ -129,6 +141,125 @@ class BOPVScraper(BaseScraper):
             raise
 
         return items
+
+    def _fetch_url_items(
+        self,
+        client: httpx.Client,
+        url: str,
+        default_date_str: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Descarga una URL XML y parsea sus elementos."""
+        response = client.get(url)
+        response.raise_for_status()
+
+        content = response.content
+        try:
+            xml_text = content.decode("iso-8859-1")
+        except UnicodeDecodeError:
+            xml_text = content.decode("utf-8", errors="replace")
+
+        return self._parse_xml_items(xml_text, default_date_str=default_date_str)
+
+    def _parse_xml_items(
+        self,
+        xml_text: str,
+        default_date_str: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Parsea la cadena XML y extrae los <item>."""
+        items: List[Dict[str, Any]] = []
+        root = ET.fromstring(xml_text)
+
+        channel_pub_date = (root.findtext(".//channel/pubDate") or "").strip()
+        xml_items = root.findall(".//item")
+
+        for item in xml_items:
+            title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            guid = (item.findtext("guid") or link).strip()
+            pub_date_str = (
+                item.findtext("pubDate")
+                or channel_pub_date
+                or default_date_str
+                or ""
+            ).strip()
+
+            if not link and not title:
+                continue
+
+            id_origen = self._extract_id_origen(guid or link)
+
+            items.append({
+                "id_origen": id_origen,
+                "title": title,
+                "link": link,
+                "guid": guid,
+                "pub_date_str": pub_date_str,
+            })
+
+        return items
+
+    def _fetch_items_for_date(
+        self,
+        client: httpx.Client,
+        target_date: date,
+    ) -> List[Dict[str, Any]]:
+        """
+        Descarga el sumario XML para una fecha específica.
+        Si la fecha no tuvo publicación (404), captura la excepción limpiamente y retorna lista vacía.
+        """
+        date_str = target_date.strftime("%Y-%m-%d")
+
+        if target_date == date.today():
+            try:
+                return self._fetch_url_items(
+                    client, self.DEFAULT_SUMARIO_URL, default_date_str=date_str
+                )
+            except httpx.HTTPStatusError as http_err:
+                if http_err.response.status_code == 404:
+                    logger.info(f"[{self.name}] No hay sumario publicado hoy {date_str} (HTTP 404).")
+                    return []
+                raise
+
+        yyyy = target_date.strftime("%Y")
+        mm = target_date.strftime("%m")
+        yyyymmdd = target_date.strftime("%Y%m%d")
+
+        candidate_urls = [
+            f"https://www.euskadi.eus/bopv2/datos/{yyyy}/{mm}/{yyyymmdd}.xml",
+            f"https://www.euskadi.eus/bopv2/datos/{yyyy}/{yyyymmdd}.xml",
+            f"https://www.euskadi.eus/bopv2/datos/{yyyy}/{mm}/s{yyyymmdd}.xml",
+        ]
+
+        last_error: Optional[Exception] = None
+        for url in candidate_urls:
+            try:
+                logger.info(f"[{self.name}] Descargando sumario de fecha {date_str} desde {url}")
+                day_items = self._fetch_url_items(client, url, default_date_str=date_str)
+                logger.info(f"[{self.name}] {len(day_items)} elementos descargados para {date_str}")
+                return day_items
+            except httpx.HTTPStatusError as http_err:
+                if http_err.response.status_code == 404:
+                    last_error = http_err
+                    continue
+                else:
+                    logger.error(
+                        f"[{self.name}] Error HTTP {http_err.response.status_code} al consultar {url}"
+                    )
+                    raise
+            except Exception as ex:
+                logger.warning(f"[{self.name}] Error al intentar descargar {url}: {ex}")
+                last_error = ex
+
+        if isinstance(last_error, httpx.HTTPStatusError) and last_error.response.status_code == 404:
+            logger.info(
+                f"[{self.name}] El día {date_str} no tuvo publicación en BOPV (HTTP 404), continuando..."
+            )
+            return []
+
+        logger.info(
+            f"[{self.name}] No se pudo obtener el sumario de {date_str} (HTTP 404 o no disponible)."
+        )
+        return []
 
     def _extract_id_origen(self, identifier: str) -> str:
         """
@@ -245,3 +376,4 @@ class BOPVScraper(BaseScraper):
             "fecha_publicacion": fecha_publicacion,
             "estado": EstadoConvocatoria.INGESTADA,
         }
+
