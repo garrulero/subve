@@ -1,8 +1,8 @@
 from datetime import date
-from typing import Any, Generic, List, Optional, TypeVar
+from typing import Generic, List, Optional, TypeVar
 from pydantic import BaseModel, Field
 
-from db.enums import DestinoGasto, SectorVertical, Territorio
+from db.enums import DestinoGasto, SectorVertical, Territorio, TipoAyuda
 
 T = TypeVar("T")
 
@@ -58,51 +58,90 @@ class NullablePrimitive(BaseModel, Generic[T]):
     )
 
 
-class ConvocatoriaClassification(BaseModel):
+class ConvocatoriaEnrichedClassification(BaseModel):
     """
-    Esquema integral de salida estructurada generado por el motor de IA
-    para transicionar una convocatoria de estado INGESTADA a CLASIFICADA.
+    Esquema exhaustivo y type-safe para la extracción estructurada por IA (modelo jev / Vercel AI Gateway).
+    Extrae primitivas tipadas, importes, resúmenes, requisitos, scoring y etiquetas.
     """
     es_empresa_privada: bool = Field(
         ...,
-        description="Indica si la subvención está dirigida a pymes, autónomos o empresas privadas (no sólo administración pública)",
+        description=(
+            "Estricto: True SOLO si la subvención/ayuda aplica a autónomos, pymes o empresas privadas. "
+            "False si es exclusiva para personas físicas individuales, becas académicas personales, "
+            "oposiciones/empleo público o entes exclusivamente públicos."
+        ),
     )
-    territorio: Territorio = Field(
+    resumen_ejecutivo: str = Field(
         ...,
-        description="Ámbito geográfico de aplicación (Álava, Bizkaia, Gipuzkoa, autonómica o estatal/UE)",
+        description="Resumen ejecutivo claro y directo (2-3 frases) orientado a directores de pymes indicando objeto, beneficiarios y cuantía.",
     )
-    sector_vertical: SectorVertical = Field(
-        ...,
-        description="Sector económico o vertical principal destinatario",
+    territorio: Optional[Territorio] = Field(
+        default=None,
+        description="Ámbito geográfico de aplicación (araba, bizkaia, gipuzkoa, euskadi_autonomica, estatal_ue)",
     )
-    destino_gasto: DestinoGasto = Field(
-        ...,
-        description="Finalidad o destino principal del gasto subvencionable",
+    sector_vertical: Optional[SectorVertical] = Field(
+        default=None,
+        description="Sector económico o vertical principal destinatario (industrial_mecanizado, cultura_audiovisual, tic_digitalizacion, etc.)",
+    )
+    destino_gasto: Optional[DestinoGasto] = Field(
+        default=None,
+        description="Finalidad principal del gasto subvencionable (activo_fijo_maquinaria, digitalizacion_software, i_mas_d_innovacion, etc.)",
+    )
+    tipo_ayuda: Optional[TipoAyuda] = Field(
+        default=None,
+        description="Modalidad de la ayuda: fondo_perdido, prestamo_blando, bonificacion_fiscal, mixta",
     )
     intensidad_financiacion: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=100.0,
-        description="Porcentaje máximo de ayuda sobre el presupuesto subvencionable (0 a 100%)",
+        description="Porcentaje máximo de intensidad de ayuda sobre inversión subvencionable (0 a 100%)",
     )
-    regimen_concesion: Optional[str] = Field(
+    presupuesto_total: Optional[float] = Field(
         default=None,
-        description="Régimen de concesión: 'concurrencia_competitiva', 'concesion_directa', 'orden_solicitud'",
+        ge=0.0,
+        description="Presupuesto global total asignado a la partida/convocatoria en euros (o null si no figura)",
     )
-    fecha_cierre: Optional[date] = Field(
+    cuantia_maxima_solicitud: Optional[float] = Field(
         default=None,
-        description="Fecha límite para presentación de solicitudes (o null si abierta hasta agotar fondos)",
+        ge=0.0,
+        description="Importe máximo subvencionable por beneficiario/solicitud en euros (o null si no figura)",
     )
-    resumen_ejecutivo: str = Field(
+    beneficiarios_detalle: str = Field(
         ...,
-        max_length=1000,
-        description="Resumen claro y directo para pymes indicando beneficiarios, cuantía y objetivo",
+        description="Descripción detallada de beneficiarios (pymes, autónomos, sectores incluidos/excluidos)",
+    )
+    requisitos_principales: List[str] = Field(
+        default_factory=list,
+        description="Lista de condiciones y requisitos clave de elegibilidad",
+    )
+    gastos_subvencionables: List[str] = Field(
+        default_factory=list,
+        description="Lista de conceptos y gastos concretos subvencionables",
     )
     tags: List[str] = Field(
         default_factory=list,
-        description="Etiquetas descriptivas para búsqueda y filtrado secundario",
+        description="Lista de etiquetas secundarias para indexación y búsqueda rápida",
     )
-    relevancia: ScorePrimitive = Field(
+    plazo_solicitud_texto: Optional[str] = Field(
+        default=None,
+        description="Descripción textual del plazo de presentación (ej: '1 mes desde publicación', 'Hasta el 30/10/2026')",
+    )
+    fecha_cierre: Optional[date] = Field(
+        default=None,
+        description="Fecha límite exacta de cierre si está determinada (formato YYYY-MM-DD), o null",
+    )
+    score_relevancia: float = Field(
         ...,
-        description="Evaluación del impacto e interés para el público objetivo del servicio",
+        ge=0.0,
+        le=1.0,
+        description="Puntuación de 0.0 a 1.0 sobre la relevancia de la ayuda para el tejido empresarial privado de Euskadi",
     )
+    score_justificacion: str = Field(
+        ...,
+        description="Explicación detallada que justifica la puntuación de relevancia asignada y por qué es o no relevante para empresas",
+    )
+
+
+# Alias de compatibilidad hacia atrás
+ConvocatoriaClassification = ConvocatoriaEnrichedClassification

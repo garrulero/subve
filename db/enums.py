@@ -46,3 +46,12 @@ class CanalNotificacion(str, Enum):
     """Canales de envío para notificaciones a clientes."""
     telegram = "telegram"
     email = "email"
+
+
+class TipoAyuda(str, Enum):
+    """Modalidad o tipo de financiación de la ayuda."""
+    fondo_perdido = "fondo_perdido"
+    prestamo_blando = "prestamo_blando"
+    bonificacion_fiscal = "bonificacion_fiscal"
+    mixta = "mixta"
+

@@ -40,8 +40,8 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_database() -> None:
     """
-    Inicializa extensiones de PostgreSQL (pgvector) y crea todas las tablas
-    registradas en los metadatos de SQLAlchemy.
+    Inicializa extensiones de PostgreSQL (pgvector), aplica migraciones de esquema
+    y crea todas las tablas registradas en los metadatos de SQLAlchemy.
     """
     # Importar modelos aquí para asegurar que están registrados en Base.metadata
     from db import models  # noqa: F401
@@ -55,4 +55,30 @@ def init_database() -> None:
             # En caso de entornos sin pgvector preinstalado a nivel de superusuario
             pass
 
+        # Aplicar migraciones de columnas Fase 2 si el dialecto es PostgreSQL
+        try:
+            dialect_name = conn.dialect.name
+            if dialect_name == "postgresql":
+                fase2_statements = [
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS resumen_ejecutivo TEXT;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS presupuesto_total DOUBLE PRECISION;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS cuantia_maxima_solicitud DOUBLE PRECISION;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS tipo_ayuda VARCHAR(50);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS beneficiarios_detalle TEXT;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS requisitos_principales JSONB;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS gastos_subvencionables JSONB;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS tags JSONB;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS score_relevancia DOUBLE PRECISION;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS score_justificacion TEXT;",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS plazo_solicitud_texto VARCHAR(255);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS ai_model VARCHAR(50);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS ai_processed_at TIMESTAMP WITH TIME ZONE;",
+                ]
+                for stmt in fase2_statements:
+                    conn.execute(text(stmt))
+                conn.commit()
+        except Exception:
+            pass
+
     Base.metadata.create_all(bind=engine)
+

@@ -15,6 +15,7 @@ from config.settings import settings
 from db.base import SessionLocal, get_db, init_database
 from db.enums import EstadoConvocatoria
 from db.models import ClickTracking, Convocatoria, Notificacion
+from ai.classifier import AIClassifierService
 from scrapers.bopv import BOPVScraper
 
 # Configuración de logging estructurado
@@ -191,6 +192,37 @@ def cmd_scrape_bopv(
         typer.echo("--------------------------------------------------")
     except Exception as ex:
         typer.secho(f"✗ Falló la ingesta del BOPV: {ex}", fg=typer.colors.RED, bold=True)
+        raise typer.Exit(code=1)
+    finally:
+        db.close()
+
+
+@cli.command("classify")
+def cmd_classify(
+    limit: Optional[int] = typer.Option(
+        None, "--limit", "-l", help="Número máximo de convocatorias a clasificar"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Fuerza la reclasificación de convocatorias ya procesadas"
+    ),
+):
+    """Ejecuta el motor de clasificación y extracción enriquecida con IA (modelo jev)."""
+    typer.echo("-> Iniciando proceso de clasificación con IA (Vercel AI Gateway)...")
+    init_database()
+
+    db = SessionLocal()
+    try:
+        service = AIClassifierService()
+        stats = service.process_batch(db, limit=limit, force=force)
+        typer.echo("--------------------------------------------------")
+        typer.secho("✓ Clasificación completada con éxito.", fg=typer.colors.GREEN, bold=True)
+        typer.echo(f"   • Total procesadas: {stats['total']}")
+        typer.echo(f"   • Clasificadas:     {stats['clasificadas']}")
+        typer.echo(f"   • Descartadas:      {stats['descartadas']}")
+        typer.echo(f"   • Errores:          {stats['errores']}")
+        typer.echo("--------------------------------------------------")
+    except Exception as ex:
+        typer.secho(f"✗ Falló la clasificación con IA: {ex}", fg=typer.colors.RED, bold=True)
         raise typer.Exit(code=1)
     finally:
         db.close()

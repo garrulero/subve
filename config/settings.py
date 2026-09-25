@@ -54,6 +54,32 @@ class Settings(BaseSettings):
         description="URL base para enlaces de seguimiento de clics",
     )
 
+    # Configuración de IA (Vercel AI Gateway / OpenAI-compatible API)
+    AI_GATEWAY_URL: str = Field(
+        default="https://gateway.ai.vercel.com/v1",
+        description="URL base de Vercel AI Gateway u otro proveedor OpenAI-compatible",
+    )
+    AI_API_KEY: str = Field(
+        default="",
+        description="API Key / Token para Vercel AI Gateway",
+    )
+    AI_MODEL: str = Field(
+        default="jev",
+        description="Nombre del modelo de IA a utilizar",
+    )
+    AI_TEMPERATURE: float = Field(
+        default=0.0,
+        description="Temperatura para generación determinista (0.0)",
+    )
+    AI_TIMEOUT_SECONDS: float = Field(
+        default=60.0,
+        description="Timeout de peticiones HTTP a la API de IA",
+    )
+    AI_MAX_RETRIES: int = Field(
+        default=3,
+        description="Número máximo de reintentos con exponential backoff",
+    )
+
     # Gestión de rutas y ficheros relativos
     DATA_DIR: Path = Field(
         default=Path("./data"),

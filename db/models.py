@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     func,
@@ -23,6 +24,7 @@ from db.enums import (
     EstadoConvocatoria,
     SectorVertical,
     Territorio,
+    TipoAyuda,
 )
 
 
@@ -89,6 +91,33 @@ class Convocatoria(Base):
         comment="Concurrencia competitiva o concesión directa",
     )
     fecha_cierre: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+
+    # Columnas de clasificación enriquecida con IA (Fase 2)
+    resumen_ejecutivo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    presupuesto_total: Mapped[Optional[float]] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Presupuesto global total asignado a la partida",
+    )
+    cuantia_maxima_solicitud: Mapped[Optional[float]] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Tope máximo subvencionable por beneficiario",
+    )
+    tipo_ayuda: Mapped[Optional[TipoAyuda]] = mapped_column(
+        SQLEnum(TipoAyuda, native_enum=False),
+        nullable=True,
+        index=True,
+    )
+    beneficiarios_detalle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requisitos_principales: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    gastos_subvencionables: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    tags: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    score_relevancia: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    score_justificacion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    plazo_solicitud_texto: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ai_model: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    ai_processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Auditoría temporal
     created_at: Mapped[datetime] = mapped_column(

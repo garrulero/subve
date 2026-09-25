@@ -1,13 +1,8 @@
-from ai.schemas import (
-    ChoicePrimitive,
-    ConvocatoriaClassification,
-    NullablePrimitive,
-    ScorePrimitive,
-)
+from ai.classifier import AIClassifierService
+from ai.schemas import ConvocatoriaEnrichedClassification, ScorePrimitive
 
 __all__ = [
-    "ChoicePrimitive",
-    "NullablePrimitive",
+    "AIClassifierService",
+    "ConvocatoriaEnrichedClassification",
     "ScorePrimitive",
-    "ConvocatoriaClassification",
 ]
