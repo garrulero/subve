@@ -1,0 +1,56 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: subvenciones_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-subve_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-subve_password}
+      POSTGRES_DB: ${POSTGRES_DB:-subvenciones_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-subve_user} -d ${POSTGRES_DB:-subvenciones_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - subve_net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: subvenciones_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      POSTGRES_USER: ${POSTGRES_USER:-subve_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-subve_password}
+      POSTGRES_DB: ${POSTGRES_DB:-subvenciones_db}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      BASE_URL_TRACKING: ${BASE_URL_TRACKING:-http://localhost:8000/t}
+      DATA_DIR: /app/data
+      LOGS_DIR: /app/logs
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    networks:
+      - subve_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  subve_net:
+    driver: bridge
