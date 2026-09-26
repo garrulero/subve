@@ -351,7 +351,14 @@
               class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 transition-colors">
           </div>
 
-          <div class="flex items-center gap-2 text-xs text-slate-400">
+          <div class="flex items-center gap-4 text-xs text-slate-400">
+            <label class="flex items-center gap-2 cursor-pointer bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg hover:border-slate-700 transition-colors">
+              <input type="checkbox" x-model="filterSoloAbiertas" @change="fetchConvocatorias()" class="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 w-3.5 h-3.5">
+              <span class="text-xs text-emerald-400 font-medium flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Solo Abiertas / Vigentes
+              </span>
+            </label>
             <span>Resultados: <strong class="text-slate-100" x-text="convocatoriasTotal">0</strong></span>
           </div>
         </div>
@@ -741,14 +748,38 @@
             <span class="font-semibold text-slate-200" x-text="formatDocTypeName(selectedItem?.tipo_documento)"></span>
           </div>
           <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Tamaño Empresa</span>
+            <span class="font-semibold text-slate-200" x-text="formatProfileName(selectedItem?.tamano_empresa)"></span>
+          </div>
+          <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Régimen Concesión</span>
+            <span class="font-semibold text-slate-200" x-text="formatProfileName(selectedItem?.regimen_concesion)"></span>
+          </div>
+          <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Sector Vertical</span>
+            <span class="font-semibold text-slate-200" x-text="formatProfileName(selectedItem?.sector_vertical)"></span>
+          </div>
+          <div>
             <span class="block text-[10px] text-slate-500 uppercase">Territorio</span>
             <span class="font-semibold text-slate-200" x-text="selectedItem?.territorio || '-'"></span>
+          </div>
+          <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Apertura / Cierre</span>
+            <span class="font-semibold text-emerald-400" x-text="(formatDate(selectedItem?.fecha_apertura) || '-') + ' / ' + (formatDate(selectedItem?.fecha_cierre) || '-')"></span>
           </div>
           <div>
             <span class="block text-[10px] text-slate-500 uppercase">Confianza IA</span>
             <span class="font-bold text-emerald-400" x-text="selectedItem?.score_relevancia ? Math.round(selectedItem.score_relevancia * 100) + '%' : '-'"></span>
           </div>
         </div>
+
+        <!-- PLAZO SOLICITUD TEXTO -->
+        <template x-if="selectedItem?.plazo_solicitud_texto">
+          <div class="space-y-1.5">
+            <h4 class="font-bold text-xs text-white uppercase tracking-wider text-amber-400">Plazo de Solicitud / Vigencia</h4>
+            <p class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 leading-relaxed text-slate-200" x-text="selectedItem.plazo_solicitud_texto"></p>
+          </div>
+        </template>
 
         <!-- RESUMEN EJECUTIVO -->
         <template x-if="selectedItem?.resumen_ejecutivo">
@@ -830,6 +861,7 @@
         filterTamanoEmpresa: '',
         filterRegimen: '',
         filterSector: '',
+        filterSoloAbiertas: false,
 
         // Modal State
         modalOpen: false,
@@ -883,6 +915,7 @@
             if (this.filterTamanoEmpresa) params.append('tamano_empresa', this.filterTamanoEmpresa);
             if (this.filterRegimen) params.append('regimen_concesion', this.filterRegimen);
             if (this.filterSector) params.append('sector_vertical', this.filterSector);
+            if (this.filterSoloAbiertas) params.append('solo_abiertas', 'true');
 
             const res = await fetch('/api/admin/convocatorias?' + params.toString());
             if (res.ok) {

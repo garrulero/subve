@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -141,6 +142,7 @@ def get_convocatorias(
     sector_vertical: Optional[SectorVertical] = Query(None),
     tamano_empresa: Optional[TamanoEmpresa] = Query(None),
     regimen_concesion: Optional[RegimenConcesion] = Query(None),
+    solo_abiertas: bool = Query(False, description="Filtra convocatorias con fecha de cierre vigente o nula"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -172,6 +174,9 @@ def get_convocatorias(
         query = query.filter(Convocatoria.tamano_empresa == tamano_empresa)
     if regimen_concesion:
         query = query.filter(Convocatoria.regimen_concesion == regimen_concesion)
+    if solo_abiertas:
+        hoy = date.today()
+        query = query.filter(or_(Convocatoria.fecha_cierre >= hoy, Convocatoria.fecha_cierre.is_(None)))
 
     total_filtered = query.count()
     results = query.order_by(Convocatoria.created_at.desc()).offset(offset).limit(limit).all()

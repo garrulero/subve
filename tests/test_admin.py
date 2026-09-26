@@ -90,6 +90,15 @@ class TestAdminEndpoints(unittest.TestCase):
         self.assertIn("items", data)
         self.assertIn("total", data)
 
+    def test_get_convocatorias_solo_abiertas(self):
+        self.mock_db.query().filter().count.return_value = 0
+        self.mock_db.query().order_by().offset().limit().all.return_value = []
+
+        response = self.client.get("/api/admin/convocatorias?solo_abiertas=true")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["total"], 0)
+
     @patch("web.admin.BOPVScraper")
     def test_action_scrape(self, mock_scraper_cls):
         mock_scraper_instance = MagicMock()
