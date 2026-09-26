@@ -18,6 +18,7 @@ from db.enums import (
     TipoDocumento,
 )
 from db.models import Convocatoria
+from ai.dates import extract_dates_and_deadlines
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,18 @@ class AIClassifierService:
                 convocatoria.regimen_concesion = RegimenConcesion(regimen_val)
             except ValueError:
                 convocatoria.regimen_concesion = RegimenConcesion.no_determinado
+
+            # Extracción determinista de fechas de apertura, cierre y plazos de solicitud
+            f_apertura, f_cierre, plazo_txt = extract_dates_and_deadlines(
+                convocatoria.texto_crudo,
+                convocatoria.fecha_publicacion,
+            )
+            if f_apertura:
+                convocatoria.fecha_apertura = f_apertura
+            if f_cierre:
+                convocatoria.fecha_cierre = f_cierre
+            if plazo_txt:
+                convocatoria.plazo_solicitud_texto = plazo_txt
 
             # Marcar es_empresa_privada si el perfil es empresa o autónomo
             es_empresa = perfil_val in ("empresa_pyme", "autonomo")
