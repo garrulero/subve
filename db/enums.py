@@ -25,11 +25,36 @@ class Territorio(str, Enum):
 class SectorVertical(str, Enum):
     """Sectores verticales y actividades económicas de pymes y talleres."""
     industrial_mecanizado = "industrial_mecanizado"
+    agroalimentario_pesca = "agroalimentario_pesca"
+    construccion_rehabilitacion = "construccion_rehabilitacion"
+    salud_biotecnologia = "salud_biotecnologia"
+    transporte_logistica = "transporte_logistica"
+    energia_medioambiente = "energia_medioambiente"
     cultura_audiovisual = "cultura_audiovisual"
     cultura_escenicas_eventos = "cultura_escenicas_eventos"
     tic_digitalizacion = "tic_digitalizacion"
     comercio_hosteleria = "comercio_hosteleria"
+    servicios_profesionales = "servicios_profesionales"
     multisectorial = "multisectorial"
+
+
+class TamanoEmpresa(str, Enum):
+    """Tamaño de empresa o dimensión del beneficiario."""
+    autonomo_individual = "autonomo_individual"
+    micro_pyme = "micro_pyme"          # 1 a 9 trabajadores
+    pequena_empresa = "pequena_empresa"    # 10 a 49 trabajadores
+    mediana_empresa = "mediana_empresa"    # 50 a 249 trabajadores
+    gran_empresa = "gran_empresa"          # 250+ trabajadores
+    cualquier_tamano = "cualquier_tamano"
+    no_aplica = "no_aplica"                # Para particulares / admin
+
+
+class RegimenConcesion(str, Enum):
+    """Régimen de concesión de la ayuda o subvención."""
+    concurrencia_competitiva = "concurrencia_competitiva" # Baremo / concurso
+    orden_de_llegada = "orden_de_llegada"                 # Concesión sucesiva hasta agotar fondos
+    concesion_directa = "concesion_directa"
+    no_determinado = "no_determinado"
 
 
 class DestinoGasto(str, Enum):

@@ -23,7 +23,9 @@ from db.enums import (
     DestinoGasto,
     EstadoConvocatoria,
     PerfilDestinatario,
+    RegimenConcesion,
     SectorVertical,
+    TamanoEmpresa,
     Territorio,
     TipoAyuda,
     TipoDocumento,
@@ -56,6 +58,8 @@ class Convocatoria(Base):
     url_oficial: Mapped[str] = mapped_column(Text, nullable=False)
     texto_crudo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     fecha_publicacion: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
+    fecha_apertura: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
+    fecha_cierre: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
 
     # Estado de la máquina de estados
     estado: Mapped[EstadoConvocatoria] = mapped_column(
@@ -99,12 +103,18 @@ class Convocatoria(Base):
         nullable=True,
         comment="Porcentaje de intensidad máxima de financiación (0 a 100)",
     )
-    regimen_concesion: Mapped[Optional[str]] = mapped_column(
-        String(100),
+    tamano_empresa: Mapped[Optional[TamanoEmpresa]] = mapped_column(
+        SQLEnum(TamanoEmpresa, native_enum=False, length=100),
         nullable=True,
-        comment="Concurrencia competitiva o concesión directa",
+        index=True,
+        comment="Tamaño de empresa o dimensión del beneficiario",
     )
-    fecha_cierre: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    regimen_concesion: Mapped[Optional[RegimenConcesion]] = mapped_column(
+        SQLEnum(RegimenConcesion, native_enum=False, length=100),
+        nullable=True,
+        index=True,
+        comment="Concurrencia competitiva, orden de llegada, concesión directa, etc.",
+    )
 
     # Columnas de clasificación enriquecida con IA (Fase 2)
     resumen_ejecutivo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

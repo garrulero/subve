@@ -63,7 +63,9 @@ class TestAdminEndpoints(unittest.TestCase):
         dummy_conv.destino_gasto = None
         dummy_conv.tipo_ayuda = None
         dummy_conv.intensidad_financiacion = None
+        dummy_conv.tamano_empresa = None
         dummy_conv.regimen_concesion = None
+        dummy_conv.fecha_apertura = None
         dummy_conv.fecha_cierre = None
         dummy_conv.resumen_ejecutivo = "Resumen"
         dummy_conv.presupuesto_total = None

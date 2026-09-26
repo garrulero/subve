@@ -357,12 +357,12 @@
         </div>
 
         <!-- FILTROS DROPDOWN -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-800/60">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 pt-2 border-t border-slate-800/60">
           
           <!-- FILTRO ESTADO -->
           <div>
             <label class="block text-[10px] text-slate-400 mb-1">Estado</label>
-            <select x-model="filterEstado" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+            <select x-model="filterEstado" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
               <option value="">Todos los Estados</option>
               <option value="INGESTADA">INGESTADA</option>
               <option value="CLASIFICADA">CLASIFICADA</option>
@@ -374,7 +374,7 @@
           <!-- FILTRO PERFIL DESTINATARIO -->
           <div>
             <label class="block text-[10px] text-slate-400 mb-1">Perfil Destinatario</label>
-            <select x-model="filterPerfil" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+            <select x-model="filterPerfil" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
               <option value="">Todos los Perfiles</option>
               <option value="empresa_pyme">Empresas / Pymes</option>
               <option value="autonomo">Autónomos</option>
@@ -388,7 +388,7 @@
           <!-- FILTRO TIPO DOCUMENTO -->
           <div>
             <label class="block text-[10px] text-slate-400 mb-1">Tipo Documento</label>
-            <select x-model="filterTipoDoc" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+            <select x-model="filterTipoDoc" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
               <option value="">Todos los Tipos</option>
               <option value="subvencion_ayuda">Subvención / Ayuda</option>
               <option value="beca_premio">Beca / Premio</option>
@@ -398,10 +398,57 @@
             </select>
           </div>
 
+          <!-- FILTRO TAMAÑO EMPRESA -->
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-1">Tamaño Empresa</label>
+            <select x-model="filterTamanoEmpresa" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="">Todos los Tamaños</option>
+              <option value="autonomo_individual">Autónomo Individual</option>
+              <option value="micro_pyme">Micro PYME (1-9)</option>
+              <option value="pequena_empresa">Pequeña Empresa (10-49)</option>
+              <option value="mediana_empresa">Mediana Empresa (50-249)</option>
+              <option value="gran_empresa">Gran Empresa (250+)</option>
+              <option value="cualquier_tamano">Cualquier Tamaño</option>
+              <option value="no_aplica">No Aplica</option>
+            </select>
+          </div>
+
+          <!-- FILTRO RÉGIMEN CONCESIÓN -->
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-1">Régimen Concesión</label>
+            <select x-model="filterRegimen" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="">Todos los Regímenes</option>
+              <option value="concurrencia_competitiva">Concurrencia Competitiva</option>
+              <option value="orden_de_llegada">Orden de Llegada</option>
+              <option value="concesion_directa">Concesión Directa</option>
+              <option value="no_determinado">No Determinado</option>
+            </select>
+          </div>
+
+          <!-- FILTRO SECTOR VERTICAL -->
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-1">Sector Vertical</label>
+            <select x-model="filterSector" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="">Todos los Sectores</option>
+              <option value="industrial_mecanizado">Industrial / Mecanizado</option>
+              <option value="agroalimentario_pesca">Agroalimentario / Pesca</option>
+              <option value="construccion_rehabilitacion">Construcción / Rehabilitación</option>
+              <option value="salud_biotecnologia">Salud / Biotecnología</option>
+              <option value="transporte_logistica">Transporte / Logística</option>
+              <option value="energia_medioambiente">Energía / Medio Ambiente</option>
+              <option value="cultura_audiovisual">Cultura / Audiovisual</option>
+              <option value="cultura_escenicas_eventos">Cultura / Escénicas</option>
+              <option value="tic_digitalizacion">TIC / Digitalización</option>
+              <option value="comercio_hosteleria">Comercio / Hostelería</option>
+              <option value="servicios_profesionales">Servicios Profesionales</option>
+              <option value="multisectorial">Multisectorial</option>
+            </select>
+          </div>
+
           <!-- FILTRO TERRITORIO -->
           <div>
             <label class="block text-[10px] text-slate-400 mb-1">Territorio</label>
-            <select x-model="filterTerritorio" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+            <select x-model="filterTerritorio" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
               <option value="">Todos los Territorios</option>
               <option value="araba">Álava / Araba</option>
               <option value="bizkaia">Bizkaia</option>
@@ -780,6 +827,9 @@
         filterPerfil: '',
         filterTipoDoc: '',
         filterTerritorio: '',
+        filterTamanoEmpresa: '',
+        filterRegimen: '',
+        filterSector: '',
 
         // Modal State
         modalOpen: false,
@@ -830,6 +880,9 @@
             if (this.filterPerfil) params.append('perfil_destinatario', this.filterPerfil);
             if (this.filterTipoDoc) params.append('tipo_documento', this.filterTipoDoc);
             if (this.filterTerritorio) params.append('territorio', this.filterTerritorio);
+            if (this.filterTamanoEmpresa) params.append('tamano_empresa', this.filterTamanoEmpresa);
+            if (this.filterRegimen) params.append('regimen_concesion', this.filterRegimen);
+            if (this.filterSector) params.append('sector_vertical', this.filterSector);
 
             const res = await fetch('/api/admin/convocatorias?' + params.toString());
             if (res.ok) {

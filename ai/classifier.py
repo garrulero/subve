@@ -10,7 +10,9 @@ from db.enums import (
     DestinoGasto,
     EstadoConvocatoria,
     PerfilDestinatario,
+    RegimenConcesion,
     SectorVertical,
+    TamanoEmpresa,
     Territorio,
     TipoAyuda,
     TipoDocumento,
@@ -99,10 +101,16 @@ class AIClassifierService:
                     "instructions": "¿A qué sector o actividad corresponde principalmente?",
                     "criteria": {
                         "industrial_mecanizado": "Sector industrial, manufactura, máquina herramienta y talleres",
+                        "agroalimentario_pesca": "Agroalimentario, agricultura, ganadería y pesca",
+                        "construccion_rehabilitacion": "Construcción, edificación, obra civil y rehabilitación",
+                        "salud_biotecnologia": "Salud, biotecnología, farmacéutica y tecnologías médicas",
+                        "transporte_logistica": "Transporte, distribución y logística",
+                        "energia_medioambiente": "Energía, sostenibilidad, medio ambiente y economía circular",
                         "cultura_audiovisual": "Cultura, cine, creación audiovisual y medios",
                         "cultura_escenicas_eventos": "Artes escénicas, música en vivo y eventos",
                         "tic_digitalizacion": "Software, telecomunicaciones y tecnologías de la información",
                         "comercio_hosteleria": "Comercio minorista, turismo y hostelería",
+                        "servicios_profesionales": "Servicios a empresas, consultoría y servicios profesionales",
                         "multisectorial": "Multisectorial, social o aplicable a cualquier actividad",
                     },
                 },
@@ -128,6 +136,29 @@ class AIClassifierService:
                         "prestamo_blando": "Préstamo o crédito en condiciones ventajosas / bonificadas",
                         "bonificacion_fiscal": "Deducción o incentivo fiscal",
                         "mixta": "Combinación mixta de subvención y préstamo",
+                    },
+                },
+                "tamano_empresa": {
+                    "type": "choice",
+                    "instructions": "¿A qué tamaño o dimensión de beneficiario está orientada la ayuda?",
+                    "criteria": {
+                        "autonomo_individual": "Trabajador autónomo individual o profesional sin empleados",
+                        "micro_pyme": "Microempresa de 1 a 9 trabajadores",
+                        "pequena_empresa": "Pequeña empresa de 10 a 49 trabajadores",
+                        "mediana_empresa": "Mediana empresa de 50 a 249 trabajadores",
+                        "gran_empresa": "Gran empresa de 250 o más trabajadores",
+                        "cualquier_tamano": "Cualquier tamaño de empresa o pyme sin restricción explícita",
+                        "no_aplica": "No aplica (particulares, familias, ayuntamientos o admin)",
+                    },
+                },
+                "regimen_concesion": {
+                    "type": "choice",
+                    "instructions": "¿Cuál es el régimen o procedimiento de concesión de la ayuda?",
+                    "criteria": {
+                        "concurrencia_competitiva": "Concurrencia competitiva mediante baremo, puntuación o concurso",
+                        "orden_de_llegada": "Concesión por orden de presentación / llegada hasta agotar fondos",
+                        "concesion_directa": "Concesión directa o nominativa",
+                        "no_determinado": "No determinado o no especificado explícitamente en el extracto",
                     },
                 },
             },
@@ -201,6 +232,8 @@ class AIClassifierService:
             sector_val = answers.get("sector_vertical", {}).get("choice", "multisectorial")
             destino_val = answers.get("destino_gasto", {}).get("choice", "asistencia_accesibilidad_social")
             tipo_ayuda_val = answers.get("tipo_ayuda", {}).get("choice", "fondo_perdido")
+            tamano_val = answers.get("tamano_empresa", {}).get("choice", "cualquier_tamano")
+            regimen_val = answers.get("regimen_concesion", {}).get("choice", "no_determinado")
             confidence = float(answers.get("perfil_destinatario", {}).get("confidence", 0.8))
 
             now = datetime.now(timezone.utc)
@@ -212,6 +245,14 @@ class AIClassifierService:
             convocatoria.sector_vertical = SectorVertical(sector_val)
             convocatoria.destino_gasto = DestinoGasto(destino_val)
             convocatoria.tipo_ayuda = TipoAyuda(tipo_ayuda_val)
+            try:
+                convocatoria.tamano_empresa = TamanoEmpresa(tamano_val)
+            except ValueError:
+                convocatoria.tamano_empresa = TamanoEmpresa.cualquier_tamano
+            try:
+                convocatoria.regimen_concesion = RegimenConcesion(regimen_val)
+            except ValueError:
+                convocatoria.regimen_concesion = RegimenConcesion.no_determinado
 
             # Marcar es_empresa_privada si el perfil es empresa o autónomo
             es_empresa = perfil_val in ("empresa_pyme", "autonomo")

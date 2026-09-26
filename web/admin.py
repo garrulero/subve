@@ -13,7 +13,9 @@ from db.enums import (
     DestinoGasto,
     EstadoConvocatoria,
     PerfilDestinatario,
+    RegimenConcesion,
     SectorVertical,
+    TamanoEmpresa,
     Territorio,
     TipoAyuda,
     TipoDocumento,
@@ -56,7 +58,9 @@ def _serialize_convocatoria(c: Convocatoria) -> Dict[str, Any]:
         "destino_gasto": c.destino_gasto.value if c.destino_gasto and hasattr(c.destino_gasto, "value") else (str(c.destino_gasto) if c.destino_gasto else None),
         "tipo_ayuda": c.tipo_ayuda.value if c.tipo_ayuda and hasattr(c.tipo_ayuda, "value") else (str(c.tipo_ayuda) if c.tipo_ayuda else None),
         "intensidad_financiacion": c.intensidad_financiacion,
-        "regimen_concesion": c.regimen_concesion,
+        "tamano_empresa": c.tamano_empresa.value if c.tamano_empresa and hasattr(c.tamano_empresa, "value") else (str(c.tamano_empresa) if c.tamano_empresa else None),
+        "regimen_concesion": c.regimen_concesion.value if c.regimen_concesion and hasattr(c.regimen_concesion, "value") else (str(c.regimen_concesion) if c.regimen_concesion else None),
+        "fecha_apertura": c.fecha_apertura.isoformat() if c.fecha_apertura else None,
         "fecha_cierre": c.fecha_cierre.isoformat() if c.fecha_cierre else None,
         "resumen_ejecutivo": c.resumen_ejecutivo,
         "presupuesto_total": c.presupuesto_total,
@@ -134,6 +138,9 @@ def get_convocatorias(
     perfil_destinatario: Optional[PerfilDestinatario] = Query(None),
     tipo_documento: Optional[TipoDocumento] = Query(None),
     territorio: Optional[Territorio] = Query(None),
+    sector_vertical: Optional[SectorVertical] = Query(None),
+    tamano_empresa: Optional[TamanoEmpresa] = Query(None),
+    regimen_concesion: Optional[RegimenConcesion] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -159,6 +166,12 @@ def get_convocatorias(
         query = query.filter(Convocatoria.tipo_documento == tipo_documento)
     if territorio:
         query = query.filter(Convocatoria.territorio == territorio)
+    if sector_vertical:
+        query = query.filter(Convocatoria.sector_vertical == sector_vertical)
+    if tamano_empresa:
+        query = query.filter(Convocatoria.tamano_empresa == tamano_empresa)
+    if regimen_concesion:
+        query = query.filter(Convocatoria.regimen_concesion == regimen_concesion)
 
     total_filtered = query.count()
     results = query.order_by(Convocatoria.created_at.desc()).offset(offset).limit(limit).all()
