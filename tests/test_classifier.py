@@ -66,50 +66,28 @@ class TestAIClassifier(unittest.TestCase):
         mock_response.status_code = 200
 
         payload_response = {
-            "choices": [
-                {
-                    "message": {
-                        "content": json.dumps({
-                            "tipo_documento": "subvencion_ayuda",
-                            "perfil_destinatario": "empresa_pyme",
-                            "es_empresa_privada": True,
-                            "resumen_ejecutivo": "Ayuda para proyectos de I+D en Euskadi.",
-                            "territorio": "euskadi_autonomica",
-                            "sector_vertical": "tic_digitalizacion",
-                            "destino_gasto": "i_mas_d_innovacion",
-                            "tipo_ayuda": "fondo_perdido",
-                            "intensidad_financiacion": 50.0,
-                            "presupuesto_total": 1000000.0,
-                            "cuantia_maxima_solicitud": 50000.0,
-                            "beneficiarios_detalle": "Empresas con centro en Euskadi.",
-                            "requisitos_principales": ["Proyecto innovador"],
-                            "gastos_subvencionables": ["Personal I+D"],
-                            "tags": ["innovacion", "spri"],
-                            "plazo_solicitud_texto": "Hasta agotar fondos",
-                            "fecha_cierre": None,
-                            "score_relevancia": 0.9,
-                            "score_justificacion": "Programa de alto interés para empresas tecnológicas."
-                        })
-                    }
-                }
-            ]
+            "answers": {
+                "tipo_documento": {"choice": "subvencion_ayuda", "confidence": 0.95},
+                "perfil_destinatario": {"choice": "empresa_pyme", "confidence": 0.9},
+                "territorio": {"choice": "euskadi_autonomica", "confidence": 0.85},
+                "sector_vertical": {"choice": "tic_digitalizacion", "confidence": 0.8},
+                "destino_gasto": {"choice": "i_mas_d_innovacion", "confidence": 0.9},
+                "tipo_ayuda": {"choice": "fondo_perdido", "confidence": 0.95},
+            }
         }
         mock_response.json.return_value = payload_response
         mock_client.post.return_value = mock_response
         mock_client_cls.return_value.__enter__.return_value = mock_client
 
         service = AIClassifierService(api_key="test_key")
-        result = service.classify_text(
+        result = service.classify_convocatoria_raw(
             titulo="ORDEN de ayudas a I+D",
             organismo="DEPARTAMENTO DE INDUSTRIA",
             texto_crudo="Texto completo de la resolución...",
         )
 
-        self.assertEqual(result.tipo_documento, TipoDocumento.subvencion_ayuda)
-        self.assertEqual(result.perfil_destinatario, PerfilDestinatario.empresa_pyme)
-        self.assertTrue(result.es_empresa_privada)
-        self.assertEqual(result.territorio, Territorio.euskadi_autonomica)
-        self.assertEqual(result.score_relevancia, 0.9)
+        self.assertEqual(result["tipo_documento"]["choice"], "subvencion_ayuda")
+        self.assertEqual(result["perfil_destinatario"]["choice"], "empresa_pyme")
 
     @patch("ai.classifier.httpx.Client")
     def test_classify_text_retry_on_429(self, mock_client_cls):
@@ -121,24 +99,10 @@ class TestAIClassifier(unittest.TestCase):
         resp_200 = MagicMock()
         resp_200.status_code = 200
         resp_200.json.return_value = {
-            "choices": [
-                {
-                    "message": {
-                        "content": json.dumps({
-                            "tipo_documento": "empleo_publico",
-                            "perfil_destinatario": "administracion_publica",
-                            "es_empresa_privada": False,
-                            "resumen_ejecutivo": "Oposición para puestos de funcionario.",
-                            "beneficiarios_detalle": "Personas físicas individuales.",
-                            "requisitos_principales": [],
-                            "gastos_subvencionables": [],
-                            "tags": ["oposicion"],
-                            "score_relevancia": 0.0,
-                            "score_justificacion": "Es empleo público, no aplica a empresas ni colectivos vulnerables."
-                        })
-                    }
-                }
-            ]
+            "answers": {
+                "tipo_documento": {"choice": "empleo_publico", "confidence": 0.95},
+                "perfil_destinatario": {"choice": "administracion_publica", "confidence": 0.9},
+            }
         }
 
         mock_client.post.side_effect = [resp_429, resp_200]
@@ -146,34 +110,19 @@ class TestAIClassifier(unittest.TestCase):
 
         with patch("time.sleep", return_value=None):
             service = AIClassifierService(api_key="test_key", max_retries=3)
-            result = service.classify_text("Convocatoria oposiciones", "Departamento", "Texto")
-            self.assertEqual(result.tipo_documento, TipoDocumento.empleo_publico)
-            self.assertFalse(result.es_empresa_privada)
-            self.assertEqual(result.score_relevancia, 0.0)
+            result = service.classify_convocatoria_raw("Convocatoria oposiciones", "Departamento", "Texto")
+            self.assertEqual(result["tipo_documento"]["choice"], "empleo_publico")
 
-    @patch("ai.classifier.AIClassifierService.classify_text")
-    def test_process_convocatoria_classified(self, mock_classify_text):
-        mock_classify_text.return_value = ConvocatoriaEnrichedClassification(
-            tipo_documento=TipoDocumento.subvencion_ayuda,
-            perfil_destinatario=PerfilDestinatario.empresa_pyme,
-            es_empresa_privada=True,
-            resumen_ejecutivo="Resumen ejecutivo pyme.",
-            territorio=Territorio.gipuzkoa,
-            sector_vertical=SectorVertical.multisectorial,
-            destino_gasto=DestinoGasto.eficiencia_energia,
-            tipo_ayuda=TipoAyuda.fondo_perdido,
-            intensidad_financiacion=60.0,
-            presupuesto_total=250000.0,
-            cuantia_maxima_solicitud=15000.0,
-            beneficiarios_detalle="Autónomos y pymes.",
-            requisitos_principales=["Requisito 1"],
-            gastos_subvencionables=["Gasto 1"],
-            tags=["eficiencia"],
-            plazo_solicitud_texto="30 días",
-            fecha_cierre=None,
-            score_relevancia=0.85,
-            score_justificacion="Buena oportunidad de ahorro energético."
-        )
+    @patch("ai.classifier.AIClassifierService.classify_convocatoria_raw")
+    def test_process_convocatoria_classified(self, mock_classify_raw):
+        mock_classify_raw.return_value = {
+            "tipo_documento": {"choice": "subvencion_ayuda", "confidence": 0.95},
+            "perfil_destinatario": {"choice": "empresa_pyme", "confidence": 0.85},
+            "territorio": {"choice": "gipuzkoa", "confidence": 0.9},
+            "sector_vertical": {"choice": "multisectorial", "confidence": 0.8},
+            "destino_gasto": {"choice": "eficiencia_energia", "confidence": 0.9},
+            "tipo_ayuda": {"choice": "fondo_perdido", "confidence": 0.95},
+        }
 
         mock_db = MagicMock()
         conv = Convocatoria(
@@ -192,34 +141,20 @@ class TestAIClassifier(unittest.TestCase):
         self.assertEqual(updated.estado, EstadoConvocatoria.CLASIFICADA)
         self.assertEqual(updated.tipo_documento, TipoDocumento.subvencion_ayuda)
         self.assertEqual(updated.perfil_destinatario, PerfilDestinatario.empresa_pyme)
-        self.assertEqual(updated.resumen_ejecutivo, "Resumen ejecutivo pyme.")
         self.assertEqual(updated.territorio, Territorio.gipuzkoa)
         self.assertEqual(updated.score_relevancia, 0.85)
         mock_db.commit.assert_called_once()
 
-    @patch("ai.classifier.AIClassifierService.classify_text")
-    def test_process_convocatoria_discapacidad_tercer_sector(self, mock_classify_text):
-        mock_classify_text.return_value = ConvocatoriaEnrichedClassification(
-            tipo_documento=TipoDocumento.subvencion_ayuda,
-            perfil_destinatario=PerfilDestinatario.discapacidad_dependencia,
-            es_empresa_privada=False,
-            resumen_ejecutivo="Ayudas para adaptación de vivienda a personas con movilidad reducida.",
-            territorio=Territorio.bizkaia,
-            sector_vertical=SectorVertical.multisectorial,
-            destino_gasto=DestinoGasto.asistencia_accesibilidad_social,
-            tipo_ayuda=TipoAyuda.fondo_perdido,
-            intensidad_financiacion=80.0,
-            presupuesto_total=500000.0,
-            cuantia_maxima_solicitud=12000.0,
-            beneficiarios_detalle="Personas físicas con grado de discapacidad igual o superior al 33%.",
-            requisitos_principales=["Certificado de discapacidad"],
-            gastos_subvencionables=["Obras de accesibilidad"],
-            tags=["discapacidad", "accesibilidad"],
-            plazo_solicitud_texto="2 meses",
-            fecha_cierre=None,
-            score_relevancia=0.9,
-            score_justificacion="Ayuda directa relevante para colectivos de discapacidad y dependencia."
-        )
+    @patch("ai.classifier.AIClassifierService.classify_convocatoria_raw")
+    def test_process_convocatoria_discapacidad_tercer_sector(self, mock_classify_raw):
+        mock_classify_raw.return_value = {
+            "tipo_documento": {"choice": "subvencion_ayuda", "confidence": 0.9},
+            "perfil_destinatario": {"choice": "discapacidad_dependencia", "confidence": 0.9},
+            "territorio": {"choice": "bizkaia", "confidence": 0.95},
+            "sector_vertical": {"choice": "multisectorial", "confidence": 0.8},
+            "destino_gasto": {"choice": "asistencia_accesibilidad_social", "confidence": 0.9},
+            "tipo_ayuda": {"choice": "fondo_perdido", "confidence": 0.95},
+        }
 
         mock_db = MagicMock()
         conv = Convocatoria(
@@ -241,24 +176,6 @@ class TestAIClassifier(unittest.TestCase):
         self.assertEqual(updated.destino_gasto, DestinoGasto.asistencia_accesibilidad_social)
         self.assertFalse(updated.es_empresa_privada)
         mock_db.commit.assert_called_once()
-
-    def test_clean_json_content_markdown_codeblock(self):
-        raw_json_with_markdown = """```json
-        {
-            "es_empresa_privada": true,
-            "resumen_ejecutivo": "Prueba",
-            "score_relevancia": 0.8,
-            "score_justificacion": "OK"
-        }
-        ```"""
-        cleaned = AIClassifierService._clean_json_content(raw_json_with_markdown)
-        self.assertNotIn("```json", cleaned)
-        self.assertNotIn("```", cleaned)
-        self.assertTrue(cleaned.startswith("{"))
-
-        raw_json_plain_fence = "```\n{\"a\": 1}\n```"
-        cleaned_plain = AIClassifierService._clean_json_content(raw_json_plain_fence)
-        self.assertEqual(cleaned_plain, '{"a": 1}')
 
     def test_process_batch_includes_error_state(self):
         mock_db = MagicMock()

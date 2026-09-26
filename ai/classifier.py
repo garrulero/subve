@@ -1,6 +1,4 @@
-import json
 import logging
-import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -8,214 +6,229 @@ import httpx
 from sqlalchemy.orm import Session
 
 from config.settings import settings
-from db.enums import EstadoConvocatoria, PerfilDestinatario, TipoDocumento
+from db.enums import (
+    DestinoGasto,
+    EstadoConvocatoria,
+    PerfilDestinatario,
+    SectorVertical,
+    Territorio,
+    TipoAyuda,
+    TipoDocumento,
+)
 from db.models import Convocatoria
-from ai.schemas import ConvocatoriaEnrichedClassification
 
 logger = logging.getLogger(__name__)
 
 
 class AIClassifierService:
     """
-    Servicio de clasificación y extracción de metadatos enriquecidos mediante IA.
-    Interactúa con Vercel AI Gateway (o cualquier API compatible con OpenAI) utilizando el modelo 'jev'.
-    Soporta múltiples perfiles destinatarios (pymes, autónomos, particulares, discapacidad/dependencia, tercer sector).
+    Servicio de clasificación inteligente utilizando la API nativa de TypeSafe AI ('jev')
+    a través de Vercel AI Gateway (endpoint /typesafe/v1/systemone).
     """
-
-    SYSTEM_PROMPT_TEMPLATE = """Eres un analista experto en legislación, subvenciones, ayudas públicas, licitaciones y empleo público del País Vasco (BOPV, SPRI, Diputaciones Forales de Bizkaia, Gipuzkoa y Álava, Gobierno Vasco).
-Tu función es analizar convocatorias oficiales e identificar la tipología de documento y los perfiles beneficiarios destinatarios (pymes, autónomos, personas con discapacidad/dependencia, tercer sector/asociaciones, particulares y administración pública).
-
-Debes responder ÚNICAMENTE con un objeto JSON válido que cumpla estrictamente con el siguiente JSON Schema:
-
-{json_schema}
-
-Reglas estrictas de clasificación y extracción:
-1. `tipo_documento`: Clasifica el tipo de anuncio publicado (`subvencion_ayuda`, `beca_premio`, `licitacion_contratacion`, `empleo_publico`, `anuncio_administrativo`).
-2. `perfil_destinatario`: Identifica el perfil beneficiario principal (`empresa_pyme`, `autonomo`, `discapacidad_dependencia`, `tercer_sector_asociacion`, `particulares_general`, `administracion_publica`).
-3. `es_empresa_privada`:
-   - Asigna TRUE si `perfil_destinatario` es `empresa_pyme` o `autonomo`, o si la subvención otorga financiación a autónomos, pymes, talleres o empresas privadas.
-   - Asigna FALSE si es exclusivo para empleo público, nombramientos, licencias administrativas de obra/agua o entes exclusivamente públicos sin fin empresarial.
-4. `resumen_ejecutivo`: Redacta un resumen ejecutivo de 2 a 3 frases claras orientadas a los beneficiarios (pymes, particulares, asociaciones), explicando objeto, beneficiarios e importe.
-5. Extrae importes exactos en euros para `presupuesto_total` y `cuantia_maxima_solicitud` si figuran expresamente (por ejemplo "1.500.000 euros" -> 1500000.0). Si no figuran, asigna null.
-6. Extrae la `intensidad_financiacion` como porcentaje entre 0.0 y 100.0 si figura (por ejemplo "70%" -> 70.0).
-7. Asigna `territorio`, `sector_vertical`, `destino_gasto` y `tipo_ayuda` según las opciones permitidas del esquema.
-8. `score_relevancia`: Valor entre 0.0 y 1.0 según la oportunidad real para el perfil destinatario. Indica el motivo en `score_justificacion`.
-"""
 
     def __init__(
         self,
         gateway_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
-        temperature: Optional[float] = None,
         timeout_seconds: Optional[float] = None,
         max_retries: Optional[int] = None,
     ) -> None:
-        self.gateway_url = (gateway_url or settings.AI_GATEWAY_URL).rstrip("/")
+        raw_url = (gateway_url or settings.AI_GATEWAY_URL).rstrip("/")
+        # Normalizar para asegurar que apunta a /typesafe/v1/systemone
+        if "typesafe/v1/systemone" not in raw_url:
+            base_host = raw_url.replace("/v1", "")
+            self.endpoint_url = f"{base_host}/typesafe/v1/systemone"
+        else:
+            self.endpoint_url = raw_url
+
         self.api_key = api_key or settings.AI_API_KEY
-        self.model = model or settings.AI_MODEL
-        self.temperature = temperature if temperature is not None else settings.AI_TEMPERATURE
+        self.model = "typesafe-ai/jev" if (model or settings.AI_MODEL) == "jev" else (model or settings.AI_MODEL)
         self.timeout_seconds = timeout_seconds or settings.AI_TIMEOUT_SECONDS
         self.max_retries = max_retries if max_retries is not None else settings.AI_MAX_RETRIES
 
-    @staticmethod
-    def _clean_json_content(raw_content: str) -> str:
-        """
-        Sanea y extrae el JSON devuelto por la IA en caso de incluir
-        bloques de código Markdown (```json ... ```) o texto circundante.
-        """
-        content = raw_content.strip()
-        pattern = r"```(?:json)?\s*(.*?)\s*```"
-        match = re.search(pattern, content, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        if content.startswith("```"):
-            content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
-            content = re.sub(r"```$", "", content).strip()
-        return content
-
-    def _build_system_prompt(self) -> str:
-        schema_dict = ConvocatoriaEnrichedClassification.model_json_schema()
-        schema_str = json.dumps(schema_dict, indent=2, ensure_ascii=False)
-        return self.SYSTEM_PROMPT_TEMPLATE.format(json_schema=schema_str)
-
-    def classify_text(
-        self,
-        titulo: str,
-        organismo: Optional[str],
-        texto_crudo: Optional[str],
-    ) -> ConvocatoriaEnrichedClassification:
-        """
-        Envía el título y texto de la convocatoria a la API de IA para obtener
-        la clasificación estructurada type-safe.
-        """
-        system_prompt = self._build_system_prompt()
+    def _build_payload(self, titulo: str, organismo: Optional[str], texto_crudo: Optional[str]) -> Dict[str, Any]:
+        """Construye el payload nativo SystemOne con state y questions tipadas."""
         clean_text = (texto_crudo or "").strip()[:6000]
-
-        user_content = (
+        state = (
             f"TÍTULO DE LA CONVOCATORIA:\n{titulo}\n\n"
             f"ORGANISMO EMISOR:\n{organismo or 'No especificado'}\n\n"
             f"TEXTO OFICIAL DEL BOLETÍN:\n{clean_text}"
         )
 
+        return {
+            "model": self.model,
+            "state": state,
+            "questions": {
+                "tipo_documento": {
+                    "type": "choice",
+                    "instructions": "¿Qué tipología de documento o anuncio administrativo es?",
+                    "criteria": {
+                        "subvencion_ayuda": "Subvención, ayuda económica o partida de financiación",
+                        "beca_premio": "Beca individual de estudios, formación o premio",
+                        "licitacion_contratacion": "Licitación pública, pliego o concurso de contratación",
+                        "empleo_publico": "Oferta de empleo público, oposición, tribunal o nombramiento",
+                        "anuncio_administrativo": "Trámite administrativo general sin dotación ni ayuda económica",
+                    },
+                },
+                "perfil_destinatario": {
+                    "type": "choice",
+                    "instructions": "¿A qué colectivo o beneficiario principal va dirigida la oportunidad?",
+                    "criteria": {
+                        "empresa_pyme": "Pymes, micropymes, talleres y empresas privadas",
+                        "autonomo": "Trabajadores autónomos y profesionales independientes",
+                        "discapacidad_dependencia": "Personas con discapacidad, dependencia, movilidad reducida o accesibilidad",
+                        "tercer_sector_asociacion": "ONGs, fundaciones, federaciones y entidades sin ánimo de lucro",
+                        "particulares_general": "Particulares, familias, jóvenes o estudiantes",
+                        "administracion_publica": "Exclusivo para ayuntamientos y entes de la administración pública",
+                    },
+                },
+                "territorio": {
+                    "type": "choice",
+                    "instructions": "¿Cuál es el ámbito territorial principal de aplicación?",
+                    "criteria": {
+                        "araba": "Álava / Araba",
+                        "bizkaia": "Bizkaia",
+                        "gipuzkoa": "Gipuzkoa",
+                        "euskadi_autonomica": "Comunidad Autónoma del País Vasco en su conjunto",
+                        "estatal_ue": "Ámbito estatal de España o de la Unión Europea",
+                    },
+                },
+                "sector_vertical": {
+                    "type": "choice",
+                    "instructions": "¿A qué sector o actividad corresponde principalmente?",
+                    "criteria": {
+                        "industrial_mecanizado": "Sector industrial, manufactura, máquina herramienta y talleres",
+                        "cultura_audiovisual": "Cultura, cine, creación audiovisual y medios",
+                        "cultura_escenicas_eventos": "Artes escénicas, música en vivo y eventos",
+                        "tic_digitalizacion": "Software, telecomunicaciones y tecnologías de la información",
+                        "comercio_hosteleria": "Comercio minorista, turismo y hostelería",
+                        "multisectorial": "Multisectorial, social o aplicable a cualquier actividad",
+                    },
+                },
+                "destino_gasto": {
+                    "type": "choice",
+                    "instructions": "¿Cuál es el destino o finalidad del gasto subvencionable?",
+                    "criteria": {
+                        "activo_fijo_maquinaria": "Inversión en maquinaria, equipos e infraestructura física",
+                        "produccion_obra_cultural": "Creación o producción artística y cultural",
+                        "digitalizacion_software": "Software, digitalización y herramientas tecnológicas",
+                        "eficiencia_energia": "Eficiencia energética, descarbonización y renovables",
+                        "contratacion_talento": "Contratación laboral y formación de personal",
+                        "i_mas_d_innovacion": "I+D, prototipos e investigación aplicada",
+                        "asistencia_accesibilidad_social": "Asistencia, eliminación de barreras y accesibilidad para discapacidad",
+                        "apoyo_renta_familias": "Ayuda económica directa, bono o apoyo a familias y personas",
+                    },
+                },
+                "tipo_ayuda": {
+                    "type": "choice",
+                    "instructions": "¿Qué modalidad de ayuda o financiación ofrece?",
+                    "criteria": {
+                        "fondo_perdido": "Subvención directa a fondo perdido (no reembolsable)",
+                        "prestamo_blando": "Préstamo o crédito en condiciones ventajosas / bonificadas",
+                        "bonificacion_fiscal": "Deducción o incentivo fiscal",
+                        "mixta": "Combinación mixta de subvención y préstamo",
+                    },
+                },
+            },
+        }
+
+    def classify_convocatoria_raw(self, titulo: str, organismo: Optional[str], texto_crudo: Optional[str]) -> Dict[str, Any]:
+        """Envía el state y questions a /typesafe/v1/systemone y retorna las respuestas de jev."""
+        payload = self._build_payload(titulo, organismo, texto_crudo)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            "temperature": self.temperature,
-            "response_format": {"type": "json_object"},
-        }
-
-        url = f"{self.gateway_url}/chat/completions"
         last_exception: Optional[Exception] = None
-
         for attempt in range(1, self.max_retries + 1):
             try:
                 logger.info(
-                    f"[AIClassifierService] Enviando petición a {url} (modelo '{self.model}', intento {attempt}/{self.max_retries})..."
+                    f"[AIClassifierService] Consultando TypeSafe 'jev' en {self.endpoint_url} "
+                    f"(intento {attempt}/{self.max_retries})..."
                 )
                 with httpx.Client(timeout=self.timeout_seconds) as client:
-                    resp = client.post(url, headers=headers, json=payload)
+                    resp = client.post(self.endpoint_url, headers=headers, json=payload)
 
                     if resp.status_code in (429, 500, 502, 503, 504):
                         sleep_time = (2 ** (attempt - 1)) * 1.5
                         logger.warning(
-                            f"[AIClassifierService] Error HTTP {resp.status_code} de la API de IA. "
-                            f"Reintentando en {sleep_time:.1f}s (intento {attempt}/{self.max_retries})..."
+                            f"[AIClassifierService] Código HTTP {resp.status_code}. "
+                            f"Reintentando en {sleep_time:.1f}s..."
                         )
                         time.sleep(sleep_time)
                         continue
 
                     resp.raise_for_status()
                     data = resp.json()
+                    answers = data.get("answers", {})
+                    if not answers:
+                        raise ValueError(f"Respuesta inválida de 'jev' (sin answers): {data}")
+                    return answers
 
-                    choices = data.get("choices", [])
-                    if not choices:
-                        raise ValueError(f"Respuesta inválida de la API de IA (sin choices): {data}")
-
-                    content_str = choices[0]["message"]["content"]
-                    cleaned_json = self._clean_json_content(content_str)
-                    return ConvocatoriaEnrichedClassification.model_validate_json(cleaned_json)
-
-            except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError, Exception) as ex:
+            except Exception as ex:
                 last_exception = ex
                 sleep_time = (2 ** (attempt - 1)) * 1.5
                 logger.warning(
-                    f"[AIClassifierService] Intento {attempt}/{self.max_retries} falló: {ex}. "
+                    f"[AIClassifierService] Fallo en intento {attempt}/{self.max_retries}: {ex}. "
                     f"Reintentando en {sleep_time:.1f}s..."
                 )
                 if attempt < self.max_retries:
                     time.sleep(sleep_time)
 
         raise RuntimeError(
-            f"Fallo irrecuperable al clasificar con IA tras {self.max_retries} intentos: {last_exception}"
+            f"Fallo irrecuperable al clasificar con 'jev' tras {self.max_retries} intentos: {last_exception}"
         )
 
-    def process_convocatoria(
-        self,
-        db: Session,
-        convocatoria: Convocatoria,
-    ) -> Convocatoria:
-        """
-        Procesa una convocatoria individual y actualiza la base de datos de forma atómica.
-        """
+    def process_convocatoria(self, db: Session, convocatoria: Convocatoria) -> Convocatoria:
+        """Clasifica una convocatoria individual y actualiza la base de datos de forma atómica."""
         try:
-            classification = self.classify_text(
+            answers = self.classify_convocatoria_raw(
                 titulo=convocatoria.titulo,
                 organismo=convocatoria.organismo,
                 texto_crudo=convocatoria.texto_crudo,
             )
 
+            # Extraer opciones elegidas de las primitivas choice de jev
+            tipo_doc_val = answers.get("tipo_documento", {}).get("choice", "anuncio_administrativo")
+            perfil_val = answers.get("perfil_destinatario", {}).get("choice", "particulares_general")
+            territorio_val = answers.get("territorio", {}).get("choice", "euskadi_autonomica")
+            sector_val = answers.get("sector_vertical", {}).get("choice", "multisectorial")
+            destino_val = answers.get("destino_gasto", {}).get("choice", "asistencia_accesibilidad_social")
+            tipo_ayuda_val = answers.get("tipo_ayuda", {}).get("choice", "fondo_perdido")
+            confidence = float(answers.get("perfil_destinatario", {}).get("confidence", 0.8))
+
             now = datetime.now(timezone.utc)
-            convocatoria.ai_model = self.model
+            convocatoria.ai_model = "typesafe-ai/jev"
             convocatoria.ai_processed_at = now
-            convocatoria.tipo_documento = classification.tipo_documento
-            convocatoria.perfil_destinatario = classification.perfil_destinatario
+            convocatoria.tipo_documento = TipoDocumento(tipo_doc_val)
+            convocatoria.perfil_destinatario = PerfilDestinatario(perfil_val)
+            convocatoria.territorio = Territorio(territorio_val)
+            convocatoria.sector_vertical = SectorVertical(sector_val)
+            convocatoria.destino_gasto = DestinoGasto(destino_val)
+            convocatoria.tipo_ayuda = TipoAyuda(tipo_ayuda_val)
 
-            # Compatibilidad hacia atrás para es_empresa_privada
-            is_company_profile = (
-                classification.es_empresa_privada
-                or classification.perfil_destinatario in (PerfilDestinatario.empresa_pyme, PerfilDestinatario.autonomo)
-            )
-            convocatoria.es_empresa_privada = is_company_profile
-            convocatoria.score_relevancia = classification.score_relevancia
-            convocatoria.score_justificacion = classification.score_justificacion
+            # Marcar es_empresa_privada si el perfil es empresa o autónomo
+            es_empresa = perfil_val in ("empresa_pyme", "autonomo")
+            convocatoria.es_empresa_privada = es_empresa
+            convocatoria.score_relevancia = confidence
 
-            # Una convocatoria es válida si no es un simple anuncio administrativo y aplica a cualquier perfil objetivo
-            is_valid_opportunity = (
-                classification.tipo_documento != TipoDocumento.anuncio_administrativo
-                and (
-                    is_company_profile
-                    or classification.perfil_destinatario != PerfilDestinatario.administracion_publica
-                    or classification.score_relevancia > 0.0
-                )
-            )
-
-            if is_valid_opportunity:
-                convocatoria.estado = EstadoConvocatoria.CLASIFICADA
-                convocatoria.resumen_ejecutivo = classification.resumen_ejecutivo
-                convocatoria.territorio = classification.territorio
-                convocatoria.sector_vertical = classification.sector_vertical
-                convocatoria.destino_gasto = classification.destino_gasto
-                convocatoria.tipo_ayuda = classification.tipo_ayuda
-                convocatoria.intensidad_financiacion = classification.intensidad_financiacion
-                convocatoria.presupuesto_total = classification.presupuesto_total
-                convocatoria.cuantia_maxima_solicitud = classification.cuantia_maxima_solicitud
-                convocatoria.beneficiarios_detalle = classification.beneficiarios_detalle
-                convocatoria.requisitos_principales = classification.requisitos_principales
-                convocatoria.gastos_subvencionables = classification.gastos_subvencionables
-                convocatoria.tags = classification.tags
-                convocatoria.plazo_solicitud_texto = classification.plazo_solicitud_texto
-                convocatoria.fecha_cierre = classification.fecha_cierre
-            else:
+            # Solo descartamos anuncios meramente burocráticos sin ayuda económica
+            if tipo_doc_val == "anuncio_administrativo":
                 convocatoria.estado = EstadoConvocatoria.DESCARTADA
+                convocatoria.score_justificacion = "Trámite administrativo general sin dotación de ayuda económica."
+            else:
+                convocatoria.estado = EstadoConvocatoria.CLASIFICADA
+                convocatoria.resumen_ejecutivo = (
+                    f"Convocatoria de {tipo_ayuda_val.replace('_', ' ')} dirigida a "
+                    f"{perfil_val.replace('_', ' ')} en el ámbito de {territorio_val.replace('_', ' ')} "
+                    f"para {destino_val.replace('_', ' ')}."
+                )
+                convocatoria.tags = [tipo_doc_val, perfil_val, territorio_val, tipo_ayuda_val]
+                convocatoria.score_justificacion = (
+                    f"Clasificada con 'jev' para perfil '{perfil_val}' con confianza {confidence:.2f}."
+                )
 
             db.commit()
             db.refresh(convocatoria)
@@ -224,27 +237,20 @@ Reglas estrictas de clasificación y extracción:
         except Exception as ex:
             db.rollback()
             logger.error(
-                f"[AIClassifierService] Error procesando convocatoria ID={convocatoria.id} "
+                f"[AIClassifierService] Error procesando Convocatoria ID={convocatoria.id} "
                 f"({convocatoria.id_origen}): {ex}",
                 exc_info=True,
             )
             try:
                 convocatoria.estado = EstadoConvocatoria.ERROR
-                convocatoria.score_justificacion = f"Error durante clasificación con IA: {str(ex)}"
+                convocatoria.score_justificacion = f"Error en clasificación con 'jev': {str(ex)}"
                 db.commit()
             except Exception:
                 db.rollback()
             raise
 
-    def process_batch(
-        self,
-        db: Session,
-        limit: Optional[int] = None,
-        force: bool = False,
-    ) -> Dict[str, int]:
-        """
-        Procesa un lote de convocatorias en la base de datos de forma secuencial y atómica.
-        """
+    def process_batch(self, db: Session, limit: Optional[int] = None, force: bool = False) -> Dict[str, int]:
+        """Procesa un lote de convocatorias secuencial y atómicamente."""
         query = db.query(Convocatoria)
         if not force:
             query = query.filter(
@@ -260,22 +266,14 @@ Reglas estrictas de clasificación y extracción:
 
         convocatorias = query.all()
         total = len(convocatorias)
-        logger.info(f"[AIClassifierService] Iniciando procesamiento de {total} convocatorias...")
+        logger.info(f"[AIClassifierService] Procesando lote de {total} convocatorias con TypeSafe 'jev'...")
 
-        stats = {
-            "total": total,
-            "clasificadas": 0,
-            "descartadas": 0,
-            "errores": 0,
-        }
+        stats = {"total": total, "clasificadas": 0, "descartadas": 0, "errores": 0}
 
-        for idx, convocatoria in enumerate(convocatorias, start=1):
-            logger.info(
-                f"[AIClassifierService] [{idx}/{total}] Clasificando ID={convocatoria.id} "
-                f"('{convocatoria.titulo[:60]}...')"
-            )
+        for idx, conv in enumerate(convocatorias, start=1):
+            logger.info(f"[AIClassifierService] [{idx}/{total}] Evaluando ID={conv.id} ('{conv.titulo[:60]}...')")
             try:
-                processed = self.process_convocatoria(db, convocatoria)
+                processed = self.process_convocatoria(db, conv)
                 if processed.estado == EstadoConvocatoria.CLASIFICADA:
                     stats["clasificadas"] += 1
                 elif processed.estado == EstadoConvocatoria.DESCARTADA:

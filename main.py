@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from config.logging_config import setup_logging
 from config.settings import settings
 from db.base import SessionLocal, get_db, init_database
 from db.enums import EstadoConvocatoria, PerfilDestinatario, TipoDocumento
@@ -18,12 +19,8 @@ from db.models import ClickTracking, Convocatoria, Notificacion
 from ai.classifier import AIClassifierService
 from scrapers.bopv import BOPVScraper
 
-# Configuración de logging estructurado
-logging.basicConfig(
-    level=logging.INFO if settings.APP_ENV != "development" else logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+# Inicializar configuración de logging estructurado y persistente en disco
+setup_logging()
 logger = logging.getLogger("subvenciones-core")
 
 
@@ -235,6 +232,55 @@ def cmd_classify(
         raise typer.Exit(code=1)
     finally:
         db.close()
+
+
+@cli.command("show-errors")
+def cmd_show_errors(
+    limit: int = typer.Option(
+        10, "--limit", "-l", help="Número máximo de convocatorias en error o trazas de log a mostrar"
+    ),
+):
+    """Muestra un diagnóstico rápido de las convocatorias en ERROR y trazas recientes del log."""
+    typer.secho("=== DIAGNÓSTICO DE ERRORES DE CLASIFICACIÓN Y SISTEMA ===", fg=typer.colors.CYAN, bold=True)
+
+    # 1. Consultar base de datos
+    db = SessionLocal()
+    try:
+        err_convs = (
+            db.query(Convocatoria)
+            .filter(Convocatoria.estado == EstadoConvocatoria.ERROR)
+            .order_by(Convocatoria.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
+        typer.echo(f"\n-> Convocatorias en estado ERROR en DB ({len(err_convs)} más recientes):")
+        if not err_convs:
+            typer.secho("   ✓ No se encontraron convocatorias en estado ERROR.", fg=typer.colors.GREEN)
+        else:
+            for conv in err_convs:
+                typer.secho(f"   • ID={conv.id} [{conv.id_origen}] - '{conv.titulo[:65]}...'", fg=typer.colors.YELLOW, bold=True)
+                typer.echo(f"     Detalle fallo: {conv.score_justificacion or 'Sin detalle registrado'}")
+    except Exception as ex:
+        typer.secho(f"   ✗ Error al consultar DB: {ex}", fg=typer.colors.RED)
+    finally:
+        db.close()
+
+    # 2. Leer archivos de log en disco
+    classifier_log = settings.LOGS_DIR / "classifier_errors.log"
+    errors_log = settings.LOGS_DIR / "errors.log"
+
+    target_log = classifier_log if classifier_log.exists() and classifier_log.stat().st_size > 0 else errors_log
+    if target_log.exists() and target_log.stat().st_size > 0:
+        typer.secho(f"\n-> Últimas líneas de traza en {target_log}:", fg=typer.colors.CYAN, bold=True)
+        try:
+            with open(target_log, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                lines_to_print = lines[-limit * 15:] if len(lines) > limit * 15 else lines
+                typer.echo("".join(lines_to_print))
+        except Exception as ex:
+            typer.secho(f"   ✗ Error leyendo archivo de log {target_log}: {ex}", fg=typer.colors.RED)
+    else:
+        typer.echo(f"\n-> No hay trazas registradas aún en {target_log}")
 
 
 @cli.command("run-server")
