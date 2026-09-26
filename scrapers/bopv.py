@@ -11,7 +11,7 @@ from scrapers.base import BaseScraper
 
 logger = logging.getLogger(__name__)
 
-# Palabras clave prioritarias para ayudas, subvenciones e incentivos a empresas y cultura
+# Palabras clave prioritarias para ayudas, subvenciones e incentivos a empresas, particulares y tercer sector
 KEYWORDS_RELEVANTES = [
     "subvenci",
     "ayuda",
@@ -34,6 +34,18 @@ KEYWORDS_RELEVANTES = [
     "crédito",
     "credito",
     "programa",
+    # Términos sociales, particulares y discapacidad:
+    "discapacidad",
+    "dependencia",
+    "inclusi",
+    "accesibil",
+    "social",
+    "tercer sector",
+    "asociaci",
+    "vivienda",
+    "familia",
+    "conciliaci",
+    "vulnerable",
 ]
 
 # Patrones típicos de anuncios que NO son subvenciones empresariales (empleo público, sanciones, etc.)
