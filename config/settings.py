@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # Configuración de IA (Vercel AI Gateway / OpenAI-compatible API)
     AI_GATEWAY_URL: str = Field(
-        default="https://gateway.ai.vercel.com/v1",
+        default="https://ai-gateway.vercel.sh/v1",
         description="URL base de Vercel AI Gateway u otro proveedor OpenAI-compatible",
     )
     AI_API_KEY: str = Field(

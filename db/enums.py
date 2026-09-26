@@ -40,6 +40,8 @@ class DestinoGasto(str, Enum):
     eficiencia_energia = "eficiencia_energia"
     contratacion_talento = "contratacion_talento"
     i_mas_d_innovacion = "i_mas_d_innovacion"
+    asistencia_accesibilidad_social = "asistencia_accesibilidad_social"
+    apoyo_renta_familias = "apoyo_renta_familias"
 
 
 class CanalNotificacion(str, Enum):
@@ -54,4 +56,24 @@ class TipoAyuda(str, Enum):
     prestamo_blando = "prestamo_blando"
     bonificacion_fiscal = "bonificacion_fiscal"
     mixta = "mixta"
+
+
+class TipoDocumento(str, Enum):
+    """Categoría funcional del documento o anuncio oficial."""
+    subvencion_ayuda = "subvencion_ayuda"
+    beca_premio = "beca_premio"
+    licitacion_contratacion = "licitacion_contratacion"
+    empleo_publico = "empleo_publico"
+    anuncio_administrativo = "anuncio_administrativo"
+
+
+class PerfilDestinatario(str, Enum):
+    """Perfil beneficiario o grupo destinatario principal de la oportunidad."""
+    empresa_pyme = "empresa_pyme"
+    autonomo = "autonomo"
+    discapacidad_dependencia = "discapacidad_dependencia"
+    tercer_sector_asociacion = "tercer_sector_asociacion"
+    particulares_general = "particulares_general"
+    administracion_publica = "administracion_publica"
+
 

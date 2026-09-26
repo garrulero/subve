@@ -22,9 +22,11 @@ from db.enums import (
     CanalNotificacion,
     DestinoGasto,
     EstadoConvocatoria,
+    PerfilDestinatario,
     SectorVertical,
     Territorio,
     TipoAyuda,
+    TipoDocumento,
 )
 
 
@@ -65,6 +67,18 @@ class Convocatoria(Base):
 
     # Primitivas tipadas de clasificación (rellenadas en estado CLASIFICADA)
     es_empresa_privada: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    tipo_documento: Mapped[Optional[TipoDocumento]] = mapped_column(
+        SQLEnum(TipoDocumento, native_enum=False),
+        nullable=True,
+        index=True,
+        comment="Categorización funcional del documento (subvención, licitación, empleo público, etc.)",
+    )
+    perfil_destinatario: Mapped[Optional[PerfilDestinatario]] = mapped_column(
+        SQLEnum(PerfilDestinatario, native_enum=False),
+        nullable=True,
+        index=True,
+        comment="Perfil principal beneficiario o destinatario de la oportunidad",
+    )
     territorio: Mapped[Optional[Territorio]] = mapped_column(
         SQLEnum(Territorio, native_enum=False),
         nullable=True,

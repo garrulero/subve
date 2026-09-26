@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from config.settings import settings
 from db.base import SessionLocal, get_db, init_database
-from db.enums import EstadoConvocatoria
+from db.enums import EstadoConvocatoria, PerfilDestinatario, TipoDocumento
 from db.models import ClickTracking, Convocatoria, Notificacion
 from ai.classifier import AIClassifierService
 from scrapers.bopv import BOPVScraper
@@ -113,14 +113,20 @@ def track_click(
 @app.get("/api/convocatorias", tags=["Convocatorias"])
 def list_convocatorias(
     estado: Optional[EstadoConvocatoria] = None,
+    tipo_documento: Optional[TipoDocumento] = None,
+    perfil_destinatario: Optional[PerfilDestinatario] = None,
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
-    """Consulta convocatorias almacenadas filtrando opcionalmente por estado."""
+    """Consulta convocatorias almacenadas filtrando opcionalmente por estado, tipo de documento o perfil destinatario."""
     query = select(Convocatoria)
     if estado:
         query = query.filter(Convocatoria.estado == estado)
+    if tipo_documento:
+        query = query.filter(Convocatoria.tipo_documento == tipo_documento)
+    if perfil_destinatario:
+        query = query.filter(Convocatoria.perfil_destinatario == perfil_destinatario)
     query = query.order_by(Convocatoria.created_at.desc()).offset(offset).limit(limit)
 
     results = db.scalars(query).all()
@@ -134,6 +140,9 @@ def list_convocatorias(
             "url_oficial": c.url_oficial,
             "fecha_publicacion": c.fecha_publicacion,
             "estado": c.estado,
+            "tipo_documento": c.tipo_documento,
+            "perfil_destinatario": c.perfil_destinatario,
+            "es_empresa_privada": c.es_empresa_privada,
             "created_at": c.created_at,
         }
         for c in results
@@ -203,7 +212,7 @@ def cmd_classify(
         None, "--limit", "-l", help="Número máximo de convocatorias a clasificar"
     ),
     force: bool = typer.Option(
-        False, "--force", "-f", help="Fuerza la reclasificación de convocatorias ya procesadas"
+        False, "--force", "-f", help="Fuerza la reclasificación de todas las convocatorias (incluyendo clasificadas y descartadas)"
     ),
 ):
     """Ejecuta el motor de clasificación y extracción enriquecida con IA (modelo jev)."""

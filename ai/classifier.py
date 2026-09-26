@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -7,7 +8,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from config.settings import settings
-from db.enums import EstadoConvocatoria
+from db.enums import EstadoConvocatoria, PerfilDestinatario, TipoDocumento
 from db.models import Convocatoria
 from ai.schemas import ConvocatoriaEnrichedClassification
 
@@ -18,24 +19,27 @@ class AIClassifierService:
     """
     Servicio de clasificación y extracción de metadatos enriquecidos mediante IA.
     Interactúa con Vercel AI Gateway (o cualquier API compatible con OpenAI) utilizando el modelo 'jev'.
+    Soporta múltiples perfiles destinatarios (pymes, autónomos, particulares, discapacidad/dependencia, tercer sector).
     """
 
-    SYSTEM_PROMPT_TEMPLATE = """Eres un analista experto en legislación, subvenciones y ayudas públicas del País Vasco (BOPV, SPRI, Diputaciones Forales de Bizkaia, Gipuzkoa y Álava, Gobierno Vasco).
-Tu función es analizar convocatorias oficiales e identificar aquellas con oportunidad real para empresas privadas, pymes y autónomos.
+    SYSTEM_PROMPT_TEMPLATE = """Eres un analista experto en legislación, subvenciones, ayudas públicas, licitaciones y empleo público del País Vasco (BOPV, SPRI, Diputaciones Forales de Bizkaia, Gipuzkoa y Álava, Gobierno Vasco).
+Tu función es analizar convocatorias oficiales e identificar la tipología de documento y los perfiles beneficiarios destinatarios (pymes, autónomos, personas con discapacidad/dependencia, tercer sector/asociaciones, particulares y administración pública).
 
 Debes responder ÚNICAMENTE con un objeto JSON válido que cumpla estrictamente con el siguiente JSON Schema:
 
 {json_schema}
 
 Reglas estrictas de clasificación y extracción:
-1. `es_empresa_privada`:
-   - Asigna TRUE si la subvención/ayuda otorga financiación, créditos, becas o incentivos a autónomos, pymes, microempresas, talleres, cooperativas o empresas privadas.
-   - Asigna FALSE si es exclusiva para empleo público, oposiciones, nombramientos, licencias individuales de obra/agua, becas académicas personales a estudiantes o subvenciones exclusivas a entes públicos y ayuntamientos.
-2. `resumen_ejecutivo`: Redacta un resumen ejecutivo de 2 a 3 frases claras orientadas a directores de pymes, explicando objeto, beneficiarios e importe.
-3. Extrae importes exactos en euros para `presupuesto_total` y `cuantia_maxima_solicitud` si figuran expresamente (por ejemplo "1.500.000 euros" -> 1500000.0). Si no figuran, asigna null.
-4. Extrae la `intensidad_financiacion` como porcentaje entre 0.0 y 100.0 si figura (por ejemplo "70%" -> 70.0).
-5. Asigna `territorio`, `sector_vertical`, `destino_gasto` y `tipo_ayuda` según las opciones permitidas del esquema.
-6. `score_relevancia`: Valor entre 0.0 y 1.0 según la oportunidad real para pymes. Indica el motivo en `score_justificacion`.
+1. `tipo_documento`: Clasifica el tipo de anuncio publicado (`subvencion_ayuda`, `beca_premio`, `licitacion_contratacion`, `empleo_publico`, `anuncio_administrativo`).
+2. `perfil_destinatario`: Identifica el perfil beneficiario principal (`empresa_pyme`, `autonomo`, `discapacidad_dependencia`, `tercer_sector_asociacion`, `particulares_general`, `administracion_publica`).
+3. `es_empresa_privada`:
+   - Asigna TRUE si `perfil_destinatario` es `empresa_pyme` o `autonomo`, o si la subvención otorga financiación a autónomos, pymes, talleres o empresas privadas.
+   - Asigna FALSE si es exclusivo para empleo público, nombramientos, licencias administrativas de obra/agua o entes exclusivamente públicos sin fin empresarial.
+4. `resumen_ejecutivo`: Redacta un resumen ejecutivo de 2 a 3 frases claras orientadas a los beneficiarios (pymes, particulares, asociaciones), explicando objeto, beneficiarios e importe.
+5. Extrae importes exactos en euros para `presupuesto_total` y `cuantia_maxima_solicitud` si figuran expresamente (por ejemplo "1.500.000 euros" -> 1500000.0). Si no figuran, asigna null.
+6. Extrae la `intensidad_financiacion` como porcentaje entre 0.0 y 100.0 si figura (por ejemplo "70%" -> 70.0).
+7. Asigna `territorio`, `sector_vertical`, `destino_gasto` y `tipo_ayuda` según las opciones permitidas del esquema.
+8. `score_relevancia`: Valor entre 0.0 y 1.0 según la oportunidad real para el perfil destinatario. Indica el motivo en `score_justificacion`.
 """
 
     def __init__(
@@ -53,6 +57,22 @@ Reglas estrictas de clasificación y extracción:
         self.temperature = temperature if temperature is not None else settings.AI_TEMPERATURE
         self.timeout_seconds = timeout_seconds or settings.AI_TIMEOUT_SECONDS
         self.max_retries = max_retries if max_retries is not None else settings.AI_MAX_RETRIES
+
+    @staticmethod
+    def _clean_json_content(raw_content: str) -> str:
+        """
+        Sanea y extrae el JSON devuelto por la IA en caso de incluir
+        bloques de código Markdown (```json ... ```) o texto circundante.
+        """
+        content = raw_content.strip()
+        pattern = r"```(?:json)?\s*(.*?)\s*```"
+        match = re.search(pattern, content, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?", "", content, flags=re.IGNORECASE).strip()
+            content = re.sub(r"```$", "", content).strip()
+        return content
 
     def _build_system_prompt(self) -> str:
         schema_dict = ConvocatoriaEnrichedClassification.model_json_schema()
@@ -121,7 +141,8 @@ Reglas estrictas de clasificación y extracción:
                         raise ValueError(f"Respuesta inválida de la API de IA (sin choices): {data}")
 
                     content_str = choices[0]["message"]["content"]
-                    return ConvocatoriaEnrichedClassification.model_validate_json(content_str)
+                    cleaned_json = self._clean_json_content(content_str)
+                    return ConvocatoriaEnrichedClassification.model_validate_json(cleaned_json)
 
             except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError, Exception) as ex:
                 last_exception = ex
@@ -155,11 +176,29 @@ Reglas estrictas de clasificación y extracción:
             now = datetime.now(timezone.utc)
             convocatoria.ai_model = self.model
             convocatoria.ai_processed_at = now
-            convocatoria.es_empresa_privada = classification.es_empresa_privada
+            convocatoria.tipo_documento = classification.tipo_documento
+            convocatoria.perfil_destinatario = classification.perfil_destinatario
+
+            # Compatibilidad hacia atrás para es_empresa_privada
+            is_company_profile = (
+                classification.es_empresa_privada
+                or classification.perfil_destinatario in (PerfilDestinatario.empresa_pyme, PerfilDestinatario.autonomo)
+            )
+            convocatoria.es_empresa_privada = is_company_profile
             convocatoria.score_relevancia = classification.score_relevancia
             convocatoria.score_justificacion = classification.score_justificacion
 
-            if classification.es_empresa_privada:
+            # Una convocatoria es válida si no es un simple anuncio administrativo y aplica a cualquier perfil objetivo
+            is_valid_opportunity = (
+                classification.tipo_documento != TipoDocumento.anuncio_administrativo
+                and (
+                    is_company_profile
+                    or classification.perfil_destinatario != PerfilDestinatario.administracion_publica
+                    or classification.score_relevancia > 0.0
+                )
+            )
+
+            if is_valid_opportunity:
                 convocatoria.estado = EstadoConvocatoria.CLASIFICADA
                 convocatoria.resumen_ejecutivo = classification.resumen_ejecutivo
                 convocatoria.territorio = classification.territorio
@@ -208,7 +247,12 @@ Reglas estrictas de clasificación y extracción:
         """
         query = db.query(Convocatoria)
         if not force:
-            query = query.filter(Convocatoria.estado == EstadoConvocatoria.INGESTADA)
+            query = query.filter(
+                Convocatoria.estado.in_([
+                    EstadoConvocatoria.INGESTADA,
+                    EstadoConvocatoria.ERROR,
+                ])
+            )
         query = query.order_by(Convocatoria.created_at.desc())
 
         if limit and limit > 0:

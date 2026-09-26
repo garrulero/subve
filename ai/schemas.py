@@ -2,7 +2,14 @@ from datetime import date
 from typing import Generic, List, Optional, TypeVar
 from pydantic import BaseModel, Field
 
-from db.enums import DestinoGasto, SectorVertical, Territorio, TipoAyuda
+from db.enums import (
+    DestinoGasto,
+    PerfilDestinatario,
+    SectorVertical,
+    Territorio,
+    TipoAyuda,
+    TipoDocumento,
+)
 
 T = TypeVar("T")
 
@@ -62,18 +69,27 @@ class ConvocatoriaEnrichedClassification(BaseModel):
     """
     Esquema exhaustivo y type-safe para la extracción estructurada por IA (modelo jev / Vercel AI Gateway).
     Extrae primitivas tipadas, importes, resúmenes, requisitos, scoring y etiquetas.
+    Soporta múltiples perfiles destinatarios (pymes, particulares, discapacidad/dependencia, tercer sector).
     """
+    tipo_documento: Optional[TipoDocumento] = Field(
+        default=None,
+        description="Tipología funcional del anuncio oficial (subvencion_ayuda, beca_premio, licitacion_contratacion, empleo_publico, anuncio_administrativo)",
+    )
+    perfil_destinatario: Optional[PerfilDestinatario] = Field(
+        default=None,
+        description="Perfil principal beneficiario (empresa_pyme, autonomo, discapacidad_dependencia, tercer_sector_asociacion, particulares_general, administracion_publica)",
+    )
     es_empresa_privada: bool = Field(
         ...,
         description=(
-            "Estricto: True SOLO si la subvención/ayuda aplica a autónomos, pymes o empresas privadas. "
-            "False si es exclusiva para personas físicas individuales, becas académicas personales, "
-            "oposiciones/empleo público o entes exclusivamente públicos."
+            "Compatibilidad: True si el perfil destinatario es empresa_pyme o autonomo, "
+            "o si otorga ayuda/financiación a empresas privadas. False si es para empleo público, "
+            "anuncios administrativos o exclusivamente para entes públicos."
         ),
     )
     resumen_ejecutivo: str = Field(
         ...,
-        description="Resumen ejecutivo claro y directo (2-3 frases) orientado a directores de pymes indicando objeto, beneficiarios y cuantía.",
+        description="Resumen ejecutivo claro y directo (2-3 frases) orientado a los beneficiarios (pymes, particulares, asociaciones) indicando objeto, beneficiarios e importe.",
     )
     territorio: Optional[Territorio] = Field(
         default=None,

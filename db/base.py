@@ -71,6 +71,8 @@ def init_database() -> None:
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS score_relevancia DOUBLE PRECISION;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS score_justificacion TEXT;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS plazo_solicitud_texto VARCHAR(255);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(50);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS perfil_destinatario VARCHAR(50);",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS ai_model VARCHAR(50);",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS ai_processed_at TIMESTAMP WITH TIME ZONE;",
                 ]

@@ -37,6 +37,12 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       BASE_URL_TRACKING: ${BASE_URL_TRACKING:-http://localhost:8000/t}
+      AI_GATEWAY_URL: ${AI_GATEWAY_URL:-https://ai-gateway.vercel.sh/v1}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-jev}
+      AI_TEMPERATURE: ${AI_TEMPERATURE:-0.0}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-60.0}
+      AI_MAX_RETRIES: ${AI_MAX_RETRIES:-3}
       DATA_DIR: /app/data
       LOGS_DIR: /app/logs
     volumes:
