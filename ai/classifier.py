@@ -152,10 +152,12 @@ class AIClassifierService:
                     resp = client.post(self.endpoint_url, headers=headers, json=payload)
 
                     if resp.status_code in (429, 500, 502, 503, 504):
-                        sleep_time = (2 ** (attempt - 1)) * 1.5
+                        err_msg = f"HTTP {resp.status_code} ({resp.reason_phrase}): {resp.text[:200]}"
+                        last_exception = RuntimeError(err_msg)
+                        sleep_time = (2 ** attempt) * 2.0
                         logger.warning(
-                            f"[AIClassifierService] Código HTTP {resp.status_code}. "
-                            f"Reintentando en {sleep_time:.1f}s..."
+                            f"[AIClassifierService] {err_msg}. "
+                            f"Reintentando en {sleep_time:.1f}s (intento {attempt}/{self.max_retries})..."
                         )
                         time.sleep(sleep_time)
                         continue
@@ -164,12 +166,14 @@ class AIClassifierService:
                     data = resp.json()
                     answers = data.get("answers", {})
                     if not answers:
-                        raise ValueError(f"Respuesta inválida de 'jev' (sin answers): {data}")
+                        err_msg = f"Respuesta inválida de 'jev' (sin answers). Body crudo: {resp.text[:300]}"
+                        last_exception = ValueError(err_msg)
+                        raise ValueError(err_msg)
                     return answers
 
             except Exception as ex:
                 last_exception = ex
-                sleep_time = (2 ** (attempt - 1)) * 1.5
+                sleep_time = (2 ** attempt) * 1.5
                 logger.warning(
                     f"[AIClassifierService] Fallo en intento {attempt}/{self.max_retries}: {ex}. "
                     f"Reintentando en {sleep_time:.1f}s..."
@@ -282,6 +286,9 @@ class AIClassifierService:
                     stats["errores"] += 1
             except Exception:
                 stats["errores"] += 1
+
+            # Pausa de espaciado entre solicitudes para prevenir rate-limiting
+            time.sleep(0.5)
 
         logger.info(
             f"[AIClassifierService] Lote completado. Total: {stats['total']}, "

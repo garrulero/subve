@@ -46,16 +46,17 @@ def init_database() -> None:
     # Importar modelos aquí para asegurar que están registrados en Base.metadata
     from db import models  # noqa: F401
 
+    Base.metadata.create_all(bind=engine)
+
     with engine.connect() as conn:
         # Activar extensión pgvector si está disponible en la imagen Postgres
         try:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
             conn.commit()
         except Exception:
-            # En caso de entornos sin pgvector preinstalado a nivel de superusuario
             pass
 
-        # Aplicar migraciones de columnas Fase 2 si el dialecto es PostgreSQL
+        # Aplicar migraciones de columnas y tipos si el dialecto es PostgreSQL
         try:
             dialect_name = conn.dialect.name
             if dialect_name == "postgresql":
@@ -63,7 +64,7 @@ def init_database() -> None:
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS resumen_ejecutivo TEXT;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS presupuesto_total DOUBLE PRECISION;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS cuantia_maxima_solicitud DOUBLE PRECISION;",
-                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS tipo_ayuda VARCHAR(50);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS tipo_ayuda VARCHAR(100);",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS beneficiarios_detalle TEXT;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS requisitos_principales JSONB;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS gastos_subvencionables JSONB;",
@@ -71,16 +72,23 @@ def init_database() -> None:
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS score_relevancia DOUBLE PRECISION;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS score_justificacion TEXT;",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS plazo_solicitud_texto VARCHAR(255);",
-                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(50);",
-                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS perfil_destinatario VARCHAR(50);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(100);",
+                    "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS perfil_destinatario VARCHAR(100);",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS ai_model VARCHAR(50);",
                     "ALTER TABLE convocatorias ADD COLUMN IF NOT EXISTS ai_processed_at TIMESTAMP WITH TIME ZONE;",
+                    "ALTER TABLE convocatorias ALTER COLUMN destino_gasto TYPE VARCHAR(100);",
+                    "ALTER TABLE convocatorias ALTER COLUMN sector_vertical TYPE VARCHAR(100);",
+                    "ALTER TABLE convocatorias ALTER COLUMN territorio TYPE VARCHAR(100);",
+                    "ALTER TABLE convocatorias ALTER COLUMN tipo_ayuda TYPE VARCHAR(100);",
+                    "ALTER TABLE convocatorias ALTER COLUMN tipo_documento TYPE VARCHAR(100);",
+                    "ALTER TABLE convocatorias ALTER COLUMN perfil_destinatario TYPE VARCHAR(100);",
                 ]
                 for stmt in fase2_statements:
-                    conn.execute(text(stmt))
+                    try:
+                        conn.execute(text(stmt))
+                    except Exception:
+                        pass
                 conn.commit()
         except Exception:
             pass
-
-    Base.metadata.create_all(bind=engine)
 

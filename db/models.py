@@ -68,29 +68,29 @@ class Convocatoria(Base):
     # Primitivas tipadas de clasificación (rellenadas en estado CLASIFICADA)
     es_empresa_privada: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     tipo_documento: Mapped[Optional[TipoDocumento]] = mapped_column(
-        SQLEnum(TipoDocumento, native_enum=False),
+        SQLEnum(TipoDocumento, native_enum=False, length=100),
         nullable=True,
         index=True,
         comment="Categorización funcional del documento (subvención, licitación, empleo público, etc.)",
     )
     perfil_destinatario: Mapped[Optional[PerfilDestinatario]] = mapped_column(
-        SQLEnum(PerfilDestinatario, native_enum=False),
+        SQLEnum(PerfilDestinatario, native_enum=False, length=100),
         nullable=True,
         index=True,
         comment="Perfil principal beneficiario o destinatario de la oportunidad",
     )
     territorio: Mapped[Optional[Territorio]] = mapped_column(
-        SQLEnum(Territorio, native_enum=False),
+        SQLEnum(Territorio, native_enum=False, length=100),
         nullable=True,
         index=True,
     )
     sector_vertical: Mapped[Optional[SectorVertical]] = mapped_column(
-        SQLEnum(SectorVertical, native_enum=False),
+        SQLEnum(SectorVertical, native_enum=False, length=100),
         nullable=True,
         index=True,
     )
     destino_gasto: Mapped[Optional[DestinoGasto]] = mapped_column(
-        SQLEnum(DestinoGasto, native_enum=False),
+        SQLEnum(DestinoGasto, native_enum=False, length=100),
         nullable=True,
         index=True,
     )
@@ -119,7 +119,7 @@ class Convocatoria(Base):
         comment="Tope máximo subvencionable por beneficiario",
     )
     tipo_ayuda: Mapped[Optional[TipoAyuda]] = mapped_column(
-        SQLEnum(TipoAyuda, native_enum=False),
+        SQLEnum(TipoAyuda, native_enum=False, length=100),
         nullable=True,
         index=True,
     )

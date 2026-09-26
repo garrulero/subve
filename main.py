@@ -6,8 +6,10 @@ from typing import List, Optional
 
 import typer
 import uvicorn
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -18,10 +20,12 @@ from db.enums import EstadoConvocatoria, PerfilDestinatario, TipoDocumento
 from db.models import ClickTracking, Convocatoria, Notificacion
 from ai.classifier import AIClassifierService
 from scrapers.bopv import BOPVScraper
+from web.admin import admin_router
 
 # Inicializar configuración de logging estructurado y persistente en disco
 setup_logging()
 logger = logging.getLogger("subvenciones-core")
+
 
 
 # ------------------------------------------------------------------------------
@@ -43,6 +47,27 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Montar Router de Administración Web (/api/admin/*)
+app.include_router(admin_router)
+
+
+@app.get("/admin", tags=["Administración Web"], response_class=HTMLResponse)
+def admin_panel():
+    """Sirve la interfaz SPA del panel de administración web."""
+    template_path = Path(__file__).resolve().parent / "templates" / "admin.html"
+    if not template_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plantilla de administración (templates/admin.html) no encontrada",
+        )
+    return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+
+
+@app.get("/", tags=["Administración Web"], include_in_schema=False, response_class=RedirectResponse)
+def root_redirect():
+    """Redirige la raíz '/' al panel de administración '/admin'."""
+    return RedirectResponse(url="/admin", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @app.get("/health", tags=["Salud y Monitoreo"])

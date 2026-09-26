@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SUBVE - Panel de Administración</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    [x-cloak] { display: none !important; }
+    /* Scrollbar personalizada para la terminal de logs */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  </style>
+</head>
+
+<body class="h-full bg-slate-950 text-slate-100 flex flex-col font-sans antialiased" x-data="adminApp()" x-init="initApp()">
+
+  <!-- HEADER DE NAVEGACIÓN -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- LOGO Y TÍTULO -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 font-bold text-white text-xl">
+          S
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-lg text-slate-100 tracking-tight">SUBVE</h1>
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Sistema Activo
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">Inteligencia de Subvenciones & Gestión Multidominio</p>
+        </div>
+      </div>
+
+      <!-- BOTONES DE VISTAS (PESTAÑAS) -->
+      <nav class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+        <button 
+          @click="activeTab = 'dashboard'" 
+          :class="activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'"
+          class="px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2">
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          Dashboard
+        </button>
+
+        <button 
+          @click="activeTab = 'explorer'" 
+          :class="activeTab === 'explorer' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'"
+          class="px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2">
+          <i data-lucide="database" class="w-4 h-4"></i>
+          Explorador DB
+        </button>
+
+        <button 
+          @click="activeTab = 'logs'" 
+          :class="activeTab === 'logs' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'"
+          class="px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2">
+          <i data-lucide="terminal" class="w-4 h-4"></i>
+          Consola Logs
+        </button>
+      </nav>
+
+      <!-- BOTÓN REFRESCAR RÁPIDO -->
+      <div class="flex items-center gap-2">
+        <button 
+          @click="refreshData()" 
+          class="p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
+          title="Refrescar datos">
+          <i data-lucide="refresh-cw" class="w-4 h-4" :class="loadingStats ? 'animate-spin' : ''"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- ==================================================================== -->
+    <!-- PESTAÑA 1: DASHBOARD & ACCIONES RÁPIDAS -->
+    <!-- ==================================================================== -->
+    <div x-show="activeTab === 'dashboard'" x-transition:enter="transition ease-out duration-200 transform opacity-0 scale-98" x-transition:enter-start="opacity-0 scale-98" x-transition:enter-end="opacity-100 scale-100" class="space-y-8">
+      
+      <!-- GRID DE TARJETAS DE MÉTRICAS -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        
+        <!-- TOTAL CONVOCATORIAS -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 relative overflow-hidden group hover:border-slate-700 transition-all">
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Registros</p>
+              <h3 class="text-3xl font-extrabold text-white mt-1" x-text="stats.total_convocatorias || 0">0</h3>
+            </div>
+            <div class="p-3 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
+              <i data-lucide="layers" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-3 flex items-center gap-1">
+            <i data-lucide="clock" class="w-3 h-3"></i> Última ingesta: <span x-text="formatDate(stats.ultima_ingesta)">-</span>
+          </p>
+        </div>
+
+        <!-- CLASIFICADAS -->
+        <div class="bg-slate-900/90 border border-emerald-500/20 rounded-2xl p-5 relative overflow-hidden group hover:border-emerald-500/40 transition-all">
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs font-medium text-emerald-400 uppercase tracking-wider">Clasificadas IA</p>
+              <h3 class="text-3xl font-extrabold text-emerald-400 mt-1" x-text="stats.estados?.CLASIFICADA || 0">0</h3>
+            </div>
+            <div class="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+              <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-3 flex items-center gap-1">
+            <i data-lucide="sparkles" class="w-3 h-3 text-emerald-400"></i> Modelo: typesafe-ai/jev
+          </p>
+        </div>
+
+        <!-- INGESTADAS / PENDIENTES -->
+        <div class="bg-slate-900/90 border border-blue-500/20 rounded-2xl p-5 relative overflow-hidden group hover:border-blue-500/40 transition-all">
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs font-medium text-blue-400 uppercase tracking-wider">Pendientes</p>
+              <h3 class="text-3xl font-extrabold text-blue-400 mt-1" x-text="stats.estados?.INGESTADA || 0">0</h3>
+            </div>
+            <div class="p-3 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
+              <i data-lucide="inbox" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-3">En cola para análisis por IA</p>
+        </div>
+
+        <!-- EN ERROR -->
+        <div class="bg-slate-900/90 border border-rose-500/20 rounded-2xl p-5 relative overflow-hidden group hover:border-rose-500/40 transition-all">
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs font-medium text-rose-400 uppercase tracking-wider">En Error</p>
+              <h3 class="text-3xl font-extrabold text-rose-400 mt-1" x-text="stats.estados?.ERROR || 0">0</h3>
+            </div>
+            <div class="p-3 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20">
+              <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-3">Reintentables en lote</p>
+        </div>
+
+        <!-- DESCARTADAS -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 relative overflow-hidden group hover:border-slate-700 transition-all">
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Descartadas</p>
+              <h3 class="text-3xl font-extrabold text-slate-400 mt-1" x-text="stats.estados?.DESCARTADA || 0">0</h3>
+            </div>
+            <div class="p-3 bg-slate-800 text-slate-400 rounded-xl">
+              <i data-lucide="trash-2" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-3">Anuncios burocráticos o sin ayuda</p>
+        </div>
+
+      </div>
+
+      <!-- SECCIÓN CENTRAL: PANELES DE EJECUCIÓN Y DESGLOSE -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- PANEL DE EJECUCIÓN DE PROCESOS (ACCIONES RÁPIDAS) -->
+        <div class="lg:col-span-1 bg-slate-900/90 border border-slate-800 rounded-2xl p-6 space-y-6">
+          
+          <div class="flex items-center gap-2 pb-4 border-b border-slate-800">
+            <i data-lucide="play-circle" class="w-5 h-5 text-blue-400"></i>
+            <h2 class="font-bold text-base text-white">Ejecutar Procesos</h2>
+          </div>
+
+          <!-- ACCIÓN 1: SCRAPING BOPV -->
+          <div class="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <i data-lucide="download-cloud" class="w-4 h-4 text-sky-400"></i>
+                Ingestar Boletín BOPV
+              </h3>
+              <span class="text-[10px] text-slate-500">Scraper Oficial</span>
+            </div>
+            <p class="text-xs text-slate-400">Descarga los sumarios más recientes e inserta convocatorias.</p>
+            
+            <div class="flex items-center gap-3 pt-1">
+              <div class="w-28">
+                <label class="block text-[10px] text-slate-400 mb-1">Días laborables</label>
+                <input type="number" min="1" max="30" x-model.number="scrapeDays" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500">
+              </div>
+              <button 
+                @click="runScrape()" 
+                :disabled="runningScrape" 
+                class="flex-1 mt-4 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20">
+                <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin" x-show="runningScrape"></i>
+                <i data-lucide="play" class="w-3.5 h-3.5" x-show="!runningScrape"></i>
+                <span x-text="runningScrape ? 'Ingestando...' : 'Iniciar Ingesta'"></span>
+              </button>
+            </div>
+
+            <!-- RESULTADO DE SCRAPE -->
+            <template x-if="scrapeResult">
+              <div class="mt-3 p-3 bg-sky-950/40 border border-sky-500/30 rounded-lg text-xs space-y-1">
+                <p class="font-semibold text-sky-300" x-text="scrapeResult.message"></p>
+                <p class="text-[11px] text-slate-300">
+                  Total: <strong x-text="scrapeResult.stats?.total || 0"></strong> | 
+                  Nuevas: <strong class="text-emerald-400" x-text="scrapeResult.stats?.inserted || 0"></strong> | 
+                  Existentes: <strong class="text-slate-400" x-text="scrapeResult.stats?.skipped || 0"></strong>
+                </p>
+              </div>
+            </template>
+          </div>
+
+          <!-- ACCIÓN 2: CLASIFICADOR IA -->
+          <div class="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <i data-lucide="sparkles" class="w-4 h-4 text-emerald-400"></i>
+                Clasificación IA (jev)
+              </h3>
+              <span class="text-[10px] text-slate-500">TypeSafe AI</span>
+            </div>
+            <p class="text-xs text-slate-400">Analiza y enriquece convocatorias pendientes o registradas en error.</p>
+            
+            <div class="space-y-3 pt-1">
+              <div class="flex items-center gap-3">
+                <div class="w-28">
+                  <label class="block text-[10px] text-slate-400 mb-1">Límite max</label>
+                  <input type="number" min="1" placeholder="Todas" x-model.number="classifyLimit" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500">
+                </div>
+                <div class="flex items-center gap-2 mt-4">
+                  <input type="checkbox" id="forceCheck" x-model="classifyForce" class="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 w-4 h-4">
+                  <label for="forceCheck" class="text-xs text-slate-300 cursor-pointer">Reclasificar todo (--force)</label>
+                </div>
+              </div>
+
+              <button 
+                @click="runClassify()" 
+                :disabled="runningClassify" 
+                class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20">
+                <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin" x-show="runningClassify"></i>
+                <i data-lucide="cpu" class="w-3.5 h-3.5" x-show="!runningClassify"></i>
+                <span x-text="runningClassify ? 'Evaluando con jev...' : 'Ejecutar Clasificador IA'"></span>
+              </button>
+            </div>
+
+            <!-- RESULTADO DE CLASIFICACIÓN -->
+            <template x-if="classifyResult">
+              <div class="mt-3 p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-lg text-xs space-y-1">
+                <p class="font-semibold text-emerald-300" x-text="classifyResult.message"></p>
+                <p class="text-[11px] text-slate-300">
+                  Total: <strong x-text="classifyResult.stats?.total || 0"></strong> | 
+                  Clasificadas: <strong class="text-emerald-400" x-text="classifyResult.stats?.clasificadas || 0"></strong> | 
+                  Descartadas: <strong class="text-slate-400" x-text="classifyResult.stats?.descartadas || 0"></strong> | 
+                  Errores: <strong class="text-rose-400" x-text="classifyResult.stats?.errores || 0"></strong>
+                </p>
+              </div>
+            </template>
+          </div>
+
+        </div>
+
+        <!-- DESGLOSE POR PERFIL DESTINATARIO Y TIPO DOCUMENTO -->
+        <div class="lg:col-span-2 space-y-6">
+          
+          <!-- DESGLOSE PERFIL DESTINATARIO -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="users" class="w-5 h-5 text-indigo-400"></i>
+                <h2 class="font-bold text-base text-white">Distribución por Perfil Destinatario</h2>
+              </div>
+              <span class="text-xs text-slate-400">Cobertura Multidominio</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <template x-for="(count, profile) in stats.perfiles" :key="profile">
+                <div class="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 flex flex-col justify-between">
+                  <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-semibold text-slate-200" x-text="formatProfileName(profile)"></span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold" :class="getProfileBadgeClass(profile)" x-text="count">0</span>
+                  </div>
+                  <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                    <div class="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full" :style="'width: ' + getPercentage(count, stats.total_convocatorias) + '%'"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- DESGLOSE TIPO DOCUMENTO -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="file-text" class="w-5 h-5 text-sky-400"></i>
+                <h2 class="font-bold text-base text-white">Categorización por Tipo de Documento</h2>
+              </div>
+              <span class="text-xs text-slate-400">Anuncios Oficiales</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <template x-for="(count, docType) in stats.tipos_documento" :key="docType">
+                <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 text-center">
+                  <p class="text-[11px] font-medium text-slate-400" x-text="formatDocTypeName(docType)"></p>
+                  <p class="text-xl font-bold text-slate-100 mt-1" x-text="count">0</p>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- PESTAÑA 2: EXPLORADOR DE BASE DE DATOS -->
+    <!-- ==================================================================== -->
+    <div x-show="activeTab === 'explorer'" x-transition:enter="transition ease-out duration-200 opacity-0" class="space-y-6">
+      
+      <!-- BARRA DE BÚSQUEDA Y FILTROS -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+        
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+          <!-- INPUT BÚSQUEDA LIBRE -->
+          <div class="relative w-full md:w-96">
+            <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-3"></i>
+            <input 
+              type="text" 
+              placeholder="Buscar título, organismo o ID origen..." 
+              x-model.debounce.300ms="searchQuery" 
+              @input="fetchConvocatorias()"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 transition-colors">
+          </div>
+
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span>Resultados: <strong class="text-slate-100" x-text="convocatoriasTotal">0</strong></span>
+          </div>
+        </div>
+
+        <!-- FILTROS DROPDOWN -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-800/60">
+          
+          <!-- FILTRO ESTADO -->
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-1">Estado</label>
+            <select x-model="filterEstado" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="">Todos los Estados</option>
+              <option value="INGESTADA">INGESTADA</option>
+              <option value="CLASIFICADA">CLASIFICADA</option>
+              <option value="DESCARTADA">DESCARTADA</option>
+              <option value="ERROR">ERROR</option>
+            </select>
+          </div>
+
+          <!-- FILTRO PERFIL DESTINATARIO -->
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-1">Perfil Destinatario</label>
+            <select x-model="filterPerfil" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="">Todos los Perfiles</option>
+              <option value="empresa_pyme">Empresas / Pymes</option>
+              <option value="autonomo">Autónomos</option>
+              <option value="discapacidad_dependencia">Discapacidad / Accesibilidad</option>
+              <option value="tercer_sector_asociacion">Tercer Sector / ONGs</option>
+              <option value="particulares_general">Particulares / Familias</option>
+              <option value="administracion_publica">Administración Pública</option>
+            </select>
+          </div>
+
+          <!-- FILTRO TIPO DOCUMENTO -->
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-1">Tipo Documento</label>
+            <select x-model="filterTipoDoc" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="">Todos los Tipos</option>
+              <option value="subvencion_ayuda">Subvención / Ayuda</option>
+              <option value="beca_premio">Beca / Premio</option>
+              <option value="licitacion_contratacion">Licitación</option>
+              <option value="empleo_publico">Empleo Público</option>
+              <option value="anuncio_administrativo">Anuncio Administrativo</option>
+            </select>
+          </div>
+
+          <!-- FILTRO TERRITORIO -->
+          <div>
+            <label class="block text-[10px] text-slate-400 mb-1">Territorio</label>
+            <select x-model="filterTerritorio" @change="fetchConvocatorias()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="">Todos los Territorios</option>
+              <option value="araba">Álava / Araba</option>
+              <option value="bizkaia">Bizkaia</option>
+              <option value="gipuzkoa">Gipuzkoa</option>
+              <option value="euskadi_autonomica">Euskadi Autonómica</option>
+              <option value="estatal_ue">Estatal / UE</option>
+            </select>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- TABLA DE DATOS DE CONVOCATORIAS -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-800 bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                <th class="py-3 px-4">ID / Origen</th>
+                <th class="py-3 px-4">Título & Organismo</th>
+                <th class="py-3 px-4">Estado</th>
+                <th class="py-3 px-4">Perfil Destinatario</th>
+                <th class="py-3 px-4">Tipo Doc</th>
+                <th class="py-3 px-4">Confianza / Score</th>
+                <th class="py-3 px-4 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60 text-xs">
+              
+              <template x-if="loadingConvocatorias">
+                <tr>
+                  <td colspan="7" class="py-12 text-center text-slate-500">
+                    <i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500"></i>
+                    Cargando convocatorias...
+                  </td>
+                </tr>
+              </template>
+
+              <template x-if="!loadingConvocatorias && convocatorias.length === 0">
+                <tr>
+                  <td colspan="7" class="py-12 text-center text-slate-500">
+                    No se encontraron convocatorias coincidentes con los filtros.
+                  </td>
+                </tr>
+              </template>
+
+              <template x-for="item in convocatorias" :key="item.id">
+                <tr class="hover:bg-slate-800/40 transition-colors">
+                  
+                  <!-- ID / ORIGEN -->
+                  <td class="py-3.5 px-4 font-mono text-[11px] whitespace-nowrap">
+                    <span class="font-bold text-slate-200" x-text="'#' + item.id"></span>
+                    <div class="text-slate-500 text-[10px]" x-text="item.id_origen"></div>
+                  </td>
+
+                  <!-- TÍTULO & ORGANISMO -->
+                  <td class="py-3.5 px-4 max-w-md">
+                    <p class="font-medium text-slate-100 line-clamp-2 leading-snug" x-text="item.titulo"></p>
+                    <p class="text-[10px] text-slate-400 mt-0.5" x-text="item.organismo || 'Sin organismo'"></p>
+                  </td>
+
+                  <!-- ESTADO BADGE -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span class="px-2.5 py-1 rounded-full text-[10px] font-bold" :class="getEstadoBadgeClass(item.estado)" x-text="item.estado"></span>
+                  </td>
+
+                  <!-- PERFIL DESTINATARIO BADGE -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span class="px-2 py-0.5 rounded-md text-[10px] font-medium" :class="getProfileBadgeClass(item.perfil_destinatario)" x-text="formatProfileName(item.perfil_destinatario)"></span>
+                  </td>
+
+                  <!-- TIPO DOCUMENTO BADGE -->
+                  <td class="py-3.5 px-4 whitespace-nowrap text-slate-300 text-[11px]" x-text="formatDocTypeName(item.tipo_documento)">
+                  </td>
+
+                  <!-- SCORE RELEVANCIA / CONFIANZA -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <template x-if="item.score_relevancia !== null && item.score_relevancia !== undefined">
+                      <div class="flex items-center gap-1.5">
+                        <div class="w-12 bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                          <div class="h-full bg-emerald-500" :style="'width: ' + Math.round(item.score_relevancia * 100) + '%'"></div>
+                        </div>
+                        <span class="font-mono text-[11px] font-semibold text-emerald-400" x-text="Math.round(item.score_relevancia * 100) + '%'"></span>
+                      </div>
+                    </template>
+                    <template x-if="item.score_relevancia === null || item.score_relevancia === undefined">
+                      <span class="text-slate-600">-</span>
+                    </template>
+                  </td>
+
+                  <!-- ACCIONES -->
+                  <td class="py-3.5 px-4 whitespace-nowrap text-right space-x-1">
+                    
+                    <!-- BOTÓN VER DETALLE -->
+                    <button 
+                      @click="openModal(item)" 
+                      class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-medium transition-colors"
+                      title="Ver detalle completo">
+                      <i data-lucide="eye" class="w-3.5 h-3.5 inline"></i>
+                    </button>
+
+                    <!-- BOTÓN RECLASIFICAR -->
+                    <button 
+                      @click="reclassifyItem(item.id)" 
+                      :disabled="reclassifyingId === item.id"
+                      class="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded text-[11px] font-medium transition-colors disabled:opacity-50"
+                      title="Reclasificar con IA">
+                      <i data-lucide="rotate-cw" class="w-3.5 h-3.5 inline" :class="reclassifyingId === item.id ? 'animate-spin' : ''"></i>
+                    </button>
+
+                    <!-- ENLACE OFICIAL -->
+                    <a 
+                      :href="item.url_oficial" 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      class="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/30 rounded text-[11px] font-medium transition-colors inline-block"
+                      title="Abrir enlace oficial BOPV">
+                      <i data-lucide="external-link" class="w-3.5 h-3.5 inline"></i>
+                    </a>
+
+                  </td>
+
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- PAGINACIÓN -->
+        <div class="px-5 py-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <div>
+            Mostrando del <span x-text="convocatoriasOffset + 1"></span> al <span x-text="Math.min(convocatoriasOffset + convocatoriasLimit, convocatoriasTotal)"></span> de <span x-text="convocatoriasTotal"></span> registros
+          </div>
+          <div class="flex items-center gap-2">
+            <button 
+              @click="prevPage()" 
+              :disabled="convocatoriasOffset === 0" 
+              class="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg transition-colors">
+              Anterior
+            </button>
+            <button 
+              @click="nextPage()" 
+              :disabled="convocatoriasOffset + convocatoriasLimit >= convocatoriasTotal" 
+              class="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg transition-colors">
+              Siguiente
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- PESTAÑA 3: CONSOLA DE LOGS Y ERRORES -->
+    <!-- ==================================================================== -->
+    <div x-show="activeTab === 'logs'" x-transition:enter="transition ease-out duration-200 opacity-0" class="space-y-6">
+      
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+        
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+          
+          <!-- SELECTOR DE FICHEROS DE LOG -->
+          <div class="flex flex-wrap items-center gap-2">
+            <template x-for="file in logFiles" :key="file">
+              <button 
+                @click="selectedLogFile = file; fetchLogs()" 
+                :class="selectedLogFile === file ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-900'"
+                class="px-3 py-1.5 rounded-lg border text-xs font-mono font-semibold transition-all">
+                <i data-lucide="file-text" class="w-3.5 h-3.5 inline mr-1"></i>
+                <span x-text="file"></span>
+              </button>
+            </template>
+          </div>
+
+          <!-- CONTROLES Y FILTRADO -->
+          <div class="flex items-center gap-3">
+            <select x-model="logFilterLevel" class="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+              <option value="TODOS">Todos los Niveles</option>
+              <option value="ERROR">Solo ERROR / CRITICAL</option>
+              <option value="WARNING">Solo WARNING</option>
+              <option value="INFO">Solo INFO</option>
+            </select>
+
+            <button 
+              @click="fetchLogs()" 
+              class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5" :class="loadingLogs ? 'animate-spin' : ''"></i>
+              Refrescar
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- VISOR TERMINAL DE LOGS -->
+      <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 font-mono text-xs max-h-[650px] overflow-y-auto space-y-2 shadow-2xl">
+        
+        <template x-if="loadingLogs">
+          <div class="py-12 text-center text-slate-500">
+            <i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500"></i>
+            Cargando registros de log...
+          </div>
+        </template>
+
+        <template x-if="!loadingLogs && filteredLogs.length === 0">
+          <div class="py-12 text-center text-slate-500">
+            No hay registros para mostrar en <span x-text="selectedLogFile"></span>.
+          </div>
+        </template>
+
+        <template x-for="(entry, index) in filteredLogs" :key="index">
+          <div class="p-2.5 rounded-lg border transition-colors space-y-1" :class="getLogEntryClass(entry.level)">
+            
+            <div class="flex items-center justify-between text-[11px] opacity-80">
+              <div class="flex items-center gap-2">
+                <span class="font-bold px-1.5 py-0.5 rounded text-[10px]" :class="getLogLevelBadgeClass(entry.level)" x-text="entry.level"></span>
+                <span class="text-slate-400" x-text="entry.timestamp"></span>
+                <span class="text-slate-500" x-text="'[' + entry.logger + ']'"></span>
+              </div>
+              <span class="text-slate-500 text-[10px]" x-text="entry.location"></span>
+            </div>
+
+            <p class="text-slate-200 whitespace-pre-wrap font-mono leading-relaxed" x-text="entry.message"></p>
+
+            <template x-if="entry.traceback && entry.traceback.length > 0">
+              <div class="mt-2 p-2.5 bg-rose-950/40 border border-rose-500/30 rounded text-rose-300 font-mono text-[11px] overflow-x-auto whitespace-pre">
+                <template x-for="tb in entry.traceback">
+                  <div x-text="tb"></div>
+                </template>
+              </div>
+            </template>
+
+          </div>
+        </template>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL DE DETALLE DE CONVOCATORIA -->
+  <!-- ==================================================================== -->
+  <div 
+    x-show="modalOpen" 
+    x-cloak 
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+    x-transition:enter="transition ease-out duration-200" 
+    x-transition:enter-start="opacity-0" 
+    x-transition:enter-end="opacity-100">
+    
+    <div 
+      @click.away="modalOpen = false" 
+      class="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+      x-transition:enter="transition ease-out duration-200 transform" 
+      x-transition:enter-start="scale-95 opacity-0" 
+      x-transition:enter-end="scale-100 opacity-100">
+      
+      <!-- HEADER MODAL -->
+      <div class="p-6 border-b border-slate-800 flex items-start justify-between bg-slate-950/60">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-mono text-xs font-bold text-blue-400" x-text="'ID #' + selectedItem?.id"></span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold" :class="getEstadoBadgeClass(selectedItem?.estado)" x-text="selectedItem?.estado"></span>
+          </div>
+          <h3 class="text-base font-bold text-white leading-snug" x-text="selectedItem?.titulo"></h3>
+          <p class="text-xs text-slate-400 mt-1" x-text="selectedItem?.organismo || 'Organismo no especificado'"></p>
+        </div>
+        <button @click="modalOpen = false" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- BODY MODAL (SCROLLABLE) -->
+      <div class="p-6 space-y-6 overflow-y-auto flex-1 text-xs text-slate-300">
+        
+        <!-- BADGES METADATOS -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+          <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Perfil Destinatario</span>
+            <span class="font-semibold text-slate-200" x-text="formatProfileName(selectedItem?.perfil_destinatario)"></span>
+          </div>
+          <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Tipo Documento</span>
+            <span class="font-semibold text-slate-200" x-text="formatDocTypeName(selectedItem?.tipo_documento)"></span>
+          </div>
+          <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Territorio</span>
+            <span class="font-semibold text-slate-200" x-text="selectedItem?.territorio || '-'"></span>
+          </div>
+          <div>
+            <span class="block text-[10px] text-slate-500 uppercase">Confianza IA</span>
+            <span class="font-bold text-emerald-400" x-text="selectedItem?.score_relevancia ? Math.round(selectedItem.score_relevancia * 100) + '%' : '-'"></span>
+          </div>
+        </div>
+
+        <!-- RESUMEN EJECUTIVO -->
+        <template x-if="selectedItem?.resumen_ejecutivo">
+          <div class="space-y-1.5">
+            <h4 class="font-bold text-xs text-white uppercase tracking-wider text-blue-400">Resumen Ejecutivo</h4>
+            <p class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 leading-relaxed text-slate-200" x-text="selectedItem.resumen_ejecutivo"></p>
+          </div>
+        </template>
+
+        <!-- JUSTIFICACIÓN IA -->
+        <template x-if="selectedItem?.score_justificacion">
+          <div class="space-y-1.5">
+            <h4 class="font-bold text-xs text-white uppercase tracking-wider text-emerald-400">Evaluación / Justificación IA</h4>
+            <p class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 leading-relaxed text-slate-300" x-text="selectedItem.score_justificacion"></p>
+          </div>
+        </template>
+
+        <!-- TEXTO CRUDO DEL BOLETÍN -->
+        <template x-if="selectedItem?.texto_crudo">
+          <div class="space-y-1.5">
+            <h4 class="font-bold text-xs text-white uppercase tracking-wider text-slate-400">Extracto Texto Oficial</h4>
+            <div class="bg-slate-950/90 p-4 rounded-xl border border-slate-800 max-h-48 overflow-y-auto font-mono text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap" x-text="selectedItem.texto_crudo"></div>
+          </div>
+        </template>
+
+      </div>
+
+      <!-- FOOTER MODAL -->
+      <div class="p-4 border-t border-slate-800 bg-slate-950/80 flex justify-between items-center">
+        <a 
+          :href="selectedItem?.url_oficial" 
+          target="_blank" 
+          class="text-xs text-blue-400 hover:underline flex items-center gap-1">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          Ver en el Boletín Oficial
+        </a>
+        <button 
+          @click="modalOpen = false" 
+          class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors">
+          Cerrar
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- LÓGICA DE LA APLICACIÓN ALPINE.JS -->
+  <script>
+    function adminApp() {
+      return {
+        activeTab: 'dashboard',
+        stats: {},
+        loadingStats: false,
+
+        // Scrape & Classify actions
+        scrapeDays: 1,
+        runningScrape: false,
+        scrapeResult: null,
+
+        classifyLimit: null,
+        classifyForce: false,
+        runningClassify: false,
+        classifyResult: null,
+
+        // Convocatorias Table State
+        convocatorias: [],
+        convocatoriasTotal: 0,
+        convocatoriasLimit: 20,
+        convocatoriasOffset: 0,
+        loadingConvocatorias: false,
+        reclassifyingId: null,
+
+        // Filters
+        searchQuery: '',
+        filterEstado: '',
+        filterPerfil: '',
+        filterTipoDoc: '',
+        filterTerritorio: '',
+
+        // Modal State
+        modalOpen: false,
+        selectedItem: null,
+
+        // Logs State
+        logFiles: ['classifier_errors.log', 'errors.log', 'app.log', 'scrapers.log'],
+        selectedLogFile: 'classifier_errors.log',
+        logFilterLevel: 'TODOS',
+        rawLogEntries: [],
+        loadingLogs: false,
+
+        initApp() {
+          this.refreshData();
+          this.$nextTick(() => { lucide.createIcons(); });
+        },
+
+        async refreshData() {
+          await this.fetchStats();
+          if (this.activeTab === 'explorer') await this.fetchConvocatorias();
+          if (this.activeTab === 'logs') await this.fetchLogs();
+          this.$nextTick(() => { lucide.createIcons(); });
+        },
+
+        async fetchStats() {
+          this.loadingStats = true;
+          try {
+            const res = await fetch('/api/admin/stats');
+            if (res.ok) {
+              this.stats = await res.json();
+            }
+          } catch (e) {
+            console.error('Error fetching stats:', e);
+          } finally {
+            this.loadingStats = false;
+          }
+        },
+
+        async fetchConvocatorias() {
+          this.loadingConvocatorias = true;
+          try {
+            const params = new URLSearchParams({
+              limit: this.convocatoriasLimit,
+              offset: this.convocatoriasOffset,
+            });
+            if (this.searchQuery) params.append('search', this.searchQuery);
+            if (this.filterEstado) params.append('estado', this.filterEstado);
+            if (this.filterPerfil) params.append('perfil_destinatario', this.filterPerfil);
+            if (this.filterTipoDoc) params.append('tipo_documento', this.filterTipoDoc);
+            if (this.filterTerritorio) params.append('territorio', this.filterTerritorio);
+
+            const res = await fetch('/api/admin/convocatorias?' + params.toString());
+            if (res.ok) {
+              const data = await res.json();
+              this.convocatorias = data.items || [];
+              this.convocatoriasTotal = data.total || 0;
+            }
+          } catch (e) {
+            console.error('Error fetching convocatorias:', e);
+          } finally {
+            this.loadingConvocatorias = false;
+            this.$nextTick(() => { lucide.createIcons(); });
+          }
+        },
+
+        async runScrape() {
+          this.runningScrape = true;
+          this.scrapeResult = null;
+          try {
+            const res = await fetch('/api/admin/actions/scrape', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ days: this.scrapeDays }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+              this.scrapeResult = data;
+              await this.fetchStats();
+            } else {
+              alert('Error al ejecutar ingesta: ' + (data.detail || 'Fallo desconocido'));
+            }
+          } catch (e) {
+            alert('Error de conexión al ejecutar ingesta: ' + e);
+          } finally {
+            this.runningScrape = false;
+          }
+        },
+
+        async runClassify() {
+          this.runningClassify = true;
+          this.classifyResult = null;
+          try {
+            const res = await fetch('/api/admin/actions/classify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                limit: this.classifyLimit || null,
+                force: this.classifyForce,
+              }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+              this.classifyResult = data;
+              await this.fetchStats();
+            } else {
+              alert('Error al clasificar: ' + (data.detail || 'Fallo desconocido'));
+            }
+          } catch (e) {
+            alert('Error de conexión al clasificar: ' + e);
+          } finally {
+            this.runningClassify = false;
+          }
+        },
+
+        async reclassifyItem(id) {
+          this.reclassifyingId = id;
+          try {
+            const res = await fetch(`/api/admin/convocatorias/${id}/reclassify`, {
+              method: 'POST',
+            });
+            const data = await res.json();
+            if (res.ok && data.item) {
+              const idx = this.convocatorias.findIndex(c => c.id === id);
+              if (idx !== -1) {
+                this.convocatorias[idx] = data.item;
+              }
+              await this.fetchStats();
+            } else {
+              alert('Error reclasificando: ' + (data.detail || 'Error'));
+            }
+          } catch (e) {
+            alert('Error de conexión: ' + e);
+          } finally {
+            this.reclassifyingId = null;
+          }
+        },
+
+        async fetchLogs() {
+          this.loadingLogs = true;
+          try {
+            const res = await fetch(`/api/admin/logs/${this.selectedLogFile}?lines=200`);
+            if (res.ok) {
+              const data = await res.json();
+              this.rawLogEntries = data.entries || [];
+            }
+          } catch (e) {
+            console.error('Error fetching logs:', e);
+          } finally {
+            this.loadingLogs = false;
+          }
+        },
+
+        get filteredLogs() {
+          if (this.logFilterLevel === 'TODOS') return this.rawLogEntries;
+          return this.rawLogEntries.filter(e => e.level === this.logFilterLevel);
+        },
+
+        openModal(item) {
+          this.selectedItem = item;
+          this.modalOpen = true;
+          this.$nextTick(() => { lucide.createIcons(); });
+        },
+
+        prevPage() {
+          if (this.convocatoriasOffset >= this.convocatoriasLimit) {
+            this.convocatoriasOffset -= this.convocatoriasLimit;
+            this.fetchConvocatorias();
+          }
+        },
+
+        nextPage() {
+          if (this.convocatoriasOffset + this.convocatoriasLimit < this.convocatoriasTotal) {
+            this.convocatoriasOffset += this.convocatoriasLimit;
+            this.fetchConvocatorias();
+          }
+        },
+
+        // Helper formatting functions
+        formatDate(iso) {
+          if (!iso) return '-';
+          try { return new Date(iso).toLocaleString('es-ES'); } catch (e) { return iso; }
+        },
+
+        getPercentage(count, total) {
+          if (!total || total === 0) return 0;
+          return Math.round(((count || 0) / total) * 100);
+        },
+
+        formatProfileName(p) {
+          const names = {
+            'empresa_pyme': 'Empresas / Pymes',
+            'autonomo': 'Autónomos',
+            'discapacidad_dependencia': 'Discapacidad / Accesibilidad',
+            'tercer_sector_asociacion': 'Tercer Sector / ONGs',
+            'particulares_general': 'Particulares / Familias',
+            'administracion_publica': 'Administración Pública',
+            'sin_clasificar': 'Sin Clasificar',
+          };
+          return names[p] || p || 'Sin Clasificar';
+        },
+
+        formatDocTypeName(t) {
+          const names = {
+            'subvencion_ayuda': 'Subvención / Ayuda',
+            'beca_premio': 'Beca / Premio',
+            'licitacion_contratacion': 'Licitación',
+            'empleo_publico': 'Empleo Público',
+            'anuncio_administrativo': 'Anuncio Administrativo',
+            'sin_clasificar': 'Sin Clasificar',
+          };
+          return names[t] || t || '-';
+        },
+
+        getEstadoBadgeClass(estado) {
+          switch (estado) {
+            case 'CLASIFICADA': return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+            case 'INGESTADA': return 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+            case 'ERROR': return 'bg-rose-500/10 text-rose-400 border border-rose-500/20';
+            case 'DESCARTADA': return 'bg-slate-800 text-slate-400 border border-slate-700';
+            default: return 'bg-slate-800 text-slate-300';
+          }
+        },
+
+        getProfileBadgeClass(profile) {
+          switch (profile) {
+            case 'empresa_pyme': return 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+            case 'autonomo': return 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20';
+            case 'discapacidad_dependencia': return 'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+            case 'tercer_sector_asociacion': return 'bg-pink-500/10 text-pink-400 border border-pink-500/20';
+            case 'particulares_general': return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+            default: return 'bg-slate-800 text-slate-400';
+          }
+        },
+
+        getLogEntryClass(level) {
+          switch (level) {
+            case 'ERROR': case 'CRITICAL': return 'bg-rose-950/20 border-rose-500/30';
+            case 'WARNING': return 'bg-amber-950/20 border-amber-500/30';
+            default: return 'bg-slate-900/60 border-slate-800/80';
+          }
+        },
+
+        getLogLevelBadgeClass(level) {
+          switch (level) {
+            case 'ERROR': case 'CRITICAL': return 'bg-rose-500 text-white';
+            case 'WARNING': return 'bg-amber-500 text-slate-950';
+            default: return 'bg-blue-600 text-white';
+          }
+        }
+
+      };
+    }
+  </script>
+
+</body>
+</html>
